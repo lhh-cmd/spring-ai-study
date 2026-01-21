@@ -1,4 +1,4 @@
-package com.ai.haha.springaistudyservice.service;
+package com.ai.haha.springaistudyservice.service.study;
 
 /**
  * AI学习服务接口

@@ -1,7 +1,6 @@
-package com.ai.haha.springaistudyservice.service.impl;
+package com.ai.haha.springaistudyservice.service.study.impl;
 
-import com.ai.haha.springaistudyservice.service.AiStudyService;
-import jakarta.annotation.Resource;
+import com.ai.haha.springaistudyservice.service.study.AiStudyService;
 import org.springframework.ai.chat.ChatClient;
 import org.springframework.stereotype.Service;
 
@@ -26,8 +25,7 @@ public class AiStudyServiceImpl implements AiStudyService {
 
     @Override
     public String commonChat() {
-        ChatClient
-
+        return null;
     }
 }
 

@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>摸鱼了么 - MoYoo</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <!-- 登录/注册区域 -->
+        <div id="auth-section" class="section">
+            <div class="auth-container">
+                <h1 class="logo">🐟 摸鱼了么</h1>
+                <p class="subtitle">MoYoo - 让摸鱼更有意义</p>
+                
+                <div class="tabs">
+                    <button class="tab-btn active" onclick="switchTab('login', this)">登录</button>
+                    <button class="tab-btn" onclick="switchTab('register', this)">注册</button>
+                </div>
+                
+                <!-- 登录表单 -->
+                <div id="login-form" class="form-container">
+                    <form onsubmit="handleLogin(event)">
+                        <div class="form-group">
+                            <label>用户名</label>
+                            <input type="text" id="login-username" required placeholder="请输入用户名">
+                        </div>
+                        <div class="form-group">
+                            <label>密码</label>
+                            <div class="password-input-wrapper">
+                                <input type="password" id="login-password" required placeholder="请输入密码">
+                                <span class="password-toggle" onclick="togglePassword('login-password', this)">
+                                    <span class="eye-icon">👁️</span>
+                                </span>
+                            </div>
+                        </div>
+                        <button type="submit" class="btn btn-primary">登录</button>
+                    </form>
+                </div>
+                
+                <!-- 注册表单 -->
+                <div id="register-form" class="form-container" style="display: none;">
+                    <form onsubmit="handleRegister(event)">
+                        <div class="form-group">
+                            <label>用户名</label>
+                            <input type="text" id="register-username" required placeholder="请输入用户名">
+                        </div>
+                        <div class="form-group">
+                            <label>密码</label>
+                            <div class="password-input-wrapper">
+                                <input type="password" id="register-password" required placeholder="请输入密码">
+                                <span class="password-toggle" onclick="togglePassword('register-password', this)">
+                                    <span class="eye-icon">👁️</span>
+                                </span>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>职业</label>
+                            <select id="register-profession" required>
+                                <option value="">请选择职业</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>日工作时长（小时）</label>
+                            <input type="number" id="register-work-hours" step="0.5" min="1" max="24" value="8" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary">注册</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 主页面（摸鱼功能） -->
+        <div id="main-section" class="section" style="display: none;">
+            <header class="header">
+                <h1>🐟 摸鱼了么</h1>
+                <div class="user-info">
+                    <span id="current-username"></span>
+                    <span class="user-status" id="user-status"></span>
+                    <button class="btn btn-secondary" onclick="logout()">退出</button>
+                </div>
+            </header>
+            
+            <div class="main-content">
+                <!-- 摸鱼控制区域 -->
+                <div class="moyoo-card">
+                    <h2>打卡</h2>
+                    <!-- 时间显示区域 -->
+                    <div id="moyoo-timer" class="moyoo-timer" style="display: none;">
+                        <div class="timer-display" id="timer-display">00:00</div>
+                        <div class="timer-label">摸鱼时长</div>
+                    </div>
+                    <!-- 控制按钮区域 -->
+                    <div class="moyoo-controls">
+                        <!-- 初始状态：开始按钮 -->
+                        <button id="start-btn" class="btn btn-start" onclick="startMoYoo()">开始摸鱼</button>
+                        <!-- 运行中：暂停按钮 -->
+                        <button id="pause-btn" class="btn btn-pause" onclick="pauseMoYoo()" style="display: none;">
+                            <span class="icon-pause">⏸️</span>
+                        </button>
+                        <!-- 暂停状态：结束按钮和继续按钮 -->
+                        <div id="paused-controls" class="paused-controls" style="display: none;">
+                            <div class="stop-btn-wrapper">
+                                <svg class="stop-progress-ring" viewBox="0 0 80 80">
+                                    <circle class="progress-ring-bg" cx="40" cy="40" r="36" />
+                                    <circle class="progress-ring-fill" cx="40" cy="40" r="36" />
+                                </svg>
+                                <button id="stop-btn" class="btn btn-stop" 
+                                    onmousedown="startLongPress(event)" 
+                                    onmouseup="cancelLongPress()" 
+                                    onmouseleave="cancelLongPress()"
+                                    ontouchstart="startLongPress(event)" 
+                                    ontouchend="cancelLongPress()" 
+                                    ontouchcancel="cancelLongPress()">
+                                    <span class="icon-stop">⏹️</span>
+                                </button>
+                                <span class="long-press-hint">长按3秒结束</span>
+                            </div>
+                            <button id="resume-btn" class="btn btn-resume" onclick="resumeMoYoo()">
+                                <span class="icon-resume">▶</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 摸鱼报告 -->
+                <div id="moyoo-report" class="report-card" style="display: none;">
+                    <h3>🎉 摸鱼报告</h3>
+                    <div class="report-content">
+                        <div class="report-item">
+                            <span class="label">摸鱼时长：</span>
+                            <span id="report-duration"></span> 分钟
+                        </div>
+                        <div class="report-item">
+                            <span class="label">减少碳排放：</span>
+                            <span id="report-carbon"></span> 克
+                        </div>
+                        <div class="report-item">
+                            <span class="label">寿命增加：</span>
+                            <span id="report-life"></span> 分钟
+                        </div>
+                        <div class="report-item ai-report">
+                            <span class="label">AI 报告：</span>
+                            <p id="report-ai"></p>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 导航标签 -->
+                <div class="tabs-nav">
+                    <button class="tab-nav-btn active" onclick="showTab('moyoo', this)">打卡</button>
+                    <button class="tab-nav-btn" onclick="showTab('ranking', this)">排行榜</button>
+                </div>
+                
+                <!-- 排行榜区域 -->
+                <div id="ranking-section" class="ranking-section" style="display: none;">
+                    <div class="ranking-filters">
+                        <button class="filter-btn active" onclick="loadRanking('duration', 'week', this)">时长周榜</button>
+                        <button class="filter-btn" onclick="loadRanking('duration', 'month', this)">时长月榜</button>
+                        <button class="filter-btn" onclick="loadRanking('duration', 'year', this)">时长年榜</button>
+                        <button class="filter-btn" onclick="loadRanking('count', 'week', this)">次数周榜</button>
+                        <button class="filter-btn" onclick="loadRanking('count', 'month', this)">次数月榜</button>
+                        <button class="filter-btn" onclick="loadRanking('count', 'year', this)">次数年榜</button>
+                        <button class="filter-btn" onclick="loadRanking('carbon', 'week', this)">碳排放周榜</button>
+                        <button class="filter-btn" onclick="loadRanking('carbon', 'month', this)">碳排放月榜</button>
+                        <button class="filter-btn" onclick="loadRanking('carbon', 'year', this)">碳排放年榜</button>
+                    </div>
+                    <div id="ranking-list" class="ranking-list"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script src="/js/app.js"></script>
+</body>
+</html>
+

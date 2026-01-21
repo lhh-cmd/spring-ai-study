@@ -1,6 +1,6 @@
 package com.ai.haha.springaistudyweb.controller;
 
-import com.ai.haha.springaistudyservice.service.AiStudyService;
+import com.ai.haha.springaistudyservice.service.study.AiStudyService;
 import jakarta.annotation.Resource;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
@@ -10,7 +10,6 @@ import org.springframework.web.bind.annotation.*;
  */
 @RestController
 @RequestMapping("/api/ai-study")
-@RequiredArgsConstructor
 public class AiStudyController {
 
     @Resource
