@@ -41,13 +41,21 @@ public class CvmRequirementController {
     }
 
     /**
-     * 项目需求列表
+     * 需求列表：按项目（projectId）或按创建人（userId），均可不传
      */
     @GetMapping("/list")
-    public ResponseEntity<Map<String, Object>> list(@RequestParam Long projectId) {
+    public ResponseEntity<Map<String, Object>> list(@RequestParam(required = false) Long projectId,
+                                                    @RequestParam(required = false) Long userId) {
         Map<String, Object> response = new HashMap<>();
         try {
-            List<CvmRequirement> requirements = cvmRequirementService.listByProject(projectId);
+            List<CvmRequirement> requirements;
+            if (userId != null) {
+                requirements = cvmRequirementService.listByUser(userId);
+            } else if (projectId != null) {
+                requirements = cvmRequirementService.listByProject(projectId);
+            } else {
+                requirements = cvmRequirementService.listByProject(null);
+            }
             response.put("success", true);
             response.put("data", requirements);
             return ResponseEntity.ok(response);

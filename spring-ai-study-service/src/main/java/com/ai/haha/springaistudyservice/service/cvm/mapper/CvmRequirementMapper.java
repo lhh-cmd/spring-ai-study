@@ -24,4 +24,10 @@ public interface CvmRequirementMapper extends BaseMapper<CvmRequirement> {
      */
     @Select("SELECT * FROM cvm_requirement WHERE project_id = #{projectId} ORDER BY create_time DESC")
     List<CvmRequirement> selectByProjectId(Long projectId);
+
+    /**
+     * 根据创建人查找需求列表（按创建时间倒序）
+     */
+    @Select("SELECT * FROM cvm_requirement WHERE creator_user_id = #{creatorUserId} ORDER BY create_time DESC")
+    List<CvmRequirement> selectByCreatorUserId(Long creatorUserId);
 }

@@ -140,6 +140,11 @@ public class CvmRequirementServiceImpl implements CvmRequirementService {
     }
 
     @Override
+    public List<CvmRequirement> listByUser(Long creatorUserId) {
+        return requirementMapper.selectByCreatorUserId(creatorUserId);
+    }
+
+    @Override
     public CvmRequirement getById(Long requirementId) {
         CvmRequirement requirement = requirementMapper.selectByRequirementId(requirementId);
         if (requirement == null) {

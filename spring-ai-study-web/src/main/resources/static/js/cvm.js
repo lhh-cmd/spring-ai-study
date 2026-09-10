@@ -9,6 +9,14 @@ const ENV_CONFIG = {
     RELEASE: { name: '正式环境', branch: 'release', badge: 'badge-release' }
 };
 
+// 环境 tab 顺序
+const ENV_LIST = [
+    { code: 'DEV', name: '开发环境', branch: 'dev' },
+    { code: 'TEST', name: '测试环境', branch: 'test' },
+    { code: 'PREVIEW', name: '预发环境', branch: 'preview' },
+    { code: 'RELEASE', name: '正式环境', branch: 'release' }
+];
+
 const REQUIREMENT_STATUS = {
     DEVELOPING: '开发中/待合并',
     CONFLICT: '冲突待解决',
@@ -26,7 +34,8 @@ const MERGE_STATUS = {
 
 let currentUser = null;
 let currentProject = null; // 项目详情（含 project/environments/requirements）
-let currentEnvTab = 'REQ';
+let currentEnvTab = 'DEV';
+let createReqProjectId = null; // 弹窗创建需求时所属项目ID
 
 // ============ 工具函数 ============
 
@@ -90,7 +99,7 @@ function enterApp() {
     $('main-section').style.display = 'block';
     $('top-user').textContent = '👤 ' + (currentUser.nickname || currentUser.username);
     $('btn-logout').style.display = 'inline-block';
-    loadProjects();
+    switchSideNav('project');
 }
 
 function switchAuthTab(tab, el) {
@@ -174,13 +183,16 @@ async function loadProjects() {
         }
         list.innerHTML = data.map(function (p) {
             return '' +
-                '<div class="project-card" onclick="openProject(\'' + p.projectId + '\')">' +
+                '<div class="project-card">' +
                 '  <div>' +
                 '    <div class="proj-name">' + esc(p.projectName) + ' <span class="badge badge-dev">' + esc(p.projectCode) + '</span></div>' +
                 '    <div class="proj-meta">' + esc(p.projectDesc || '暂无描述') + '</div>' +
                 '    <div class="proj-git">' + (p.gitUrl ? 'Git: ' + esc(p.gitUrl) : 'Git地址未配置（当前为模拟模式）') + '</div>' +
                 '  </div>' +
-                '  <span class="btn btn-sm">进入管理 →</span>' +
+                '  <div class="project-card-actions">' +
+                '    <button class="btn btn-sm btn-primary" onclick="openCreateRequirement(\'' + p.projectId + '\')">创建需求</button>' +
+                '    <button class="btn btn-sm" onclick="enterEnvironment(\'' + p.projectId + '\')">进入环境</button>' +
+                '  </div>' +
                 '</div>';
         }).join('');
     } catch (e) {
@@ -213,35 +225,52 @@ async function createProject() {
     }
 }
 
-async function openProject(projectId) {
-    try {
-        currentProject = await api('/project/detail?projectId=' + projectId);
-        const p = currentProject.project;
-        $('project-title').textContent = '🔀 ' + p.projectName + '（' + p.projectCode + '）';
-        $('project-meta').textContent = (p.projectDesc || '') +
-            (p.gitUrl ? ' ｜ Git: ' + p.gitUrl : ' ｜ Git地址未配置（当前为模拟模式）');
-        $('project-detail-panel').style.display = 'block';
+// ============ 侧边导航 ============
+
+function switchSideNav(view) {
+    ['project', 'requirement', 'environment'].forEach(function (v) {
+        $('view-' + v).style.display = v === view ? 'block' : 'none';
+        $('nav-' + v).classList.toggle('active', v === view);
+    });
+    if (view === 'project') {
+        loadProjects();
+    } else if (view === 'requirement') {
+        loadMyRequirements();
+    } else if (view === 'environment') {
+        if (!currentProject) {
+            showMsg('请先在「项目管理」中点击项目旁的【进入环境】', 'error');
+            switchSideNav('project');
+            return;
+        }
         renderEnvTabs();
-        switchEnvTab('REQ');
-        $('project-detail-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
-    } catch (e) {
-        showMsg('打开项目失败：' + e.message, 'error');
+        switchEnvTab(currentEnvTab || 'DEV');
     }
 }
 
-function backToProjects() {
+async function enterEnvironment(projectId) {
+    try {
+        const detail = await api('/project/detail?projectId=' + projectId);
+        currentProject = detail;
+        currentEnvTab = 'DEV';
+        const p = detail.project;
+        $('env-project-title').textContent = '🌐 环境管理：' + p.projectName + '（' + p.projectCode + '）'
+            + (p.gitUrl ? '' : '　（当前为模拟模式）');
+        switchSideNav('environment');
+    } catch (e) {
+        showMsg('进入环境失败：' + e.message, 'error');
+    }
+}
+
+function backToProjectList() {
     currentProject = null;
-    $('project-detail-panel').style.display = 'none';
+    switchSideNav('project');
 }
 
 function renderEnvTabs() {
     const tabs = $('env-tabs');
-    let html = '<button class="env-tab" data-tab="REQ">📋 需求</button>';
-    Object.keys(ENV_CONFIG).forEach(function (code) {
-        const cfg = ENV_CONFIG[code];
-        html += '<button class="env-tab" data-tab="' + code + '">' + cfg.name + '（' + cfg.branch + '）</button>';
-    });
-    tabs.innerHTML = html;
+    tabs.innerHTML = ENV_LIST.map(function (env) {
+        return '<button class="env-tab" data-tab="' + env.code + '">' + env.name + '（' + env.branch + '）</button>';
+    }).join('');
     tabs.querySelectorAll('.env-tab').forEach(function (t) {
         t.addEventListener('click', function () { switchEnvTab(t.dataset.tab); });
     });
@@ -249,49 +278,37 @@ function renderEnvTabs() {
 
 function switchEnvTab(tab) {
     currentEnvTab = tab;
-    document.querySelectorAll('.env-tab').forEach(function (t) {
+    document.querySelectorAll('#env-tabs .env-tab').forEach(function (t) {
         t.classList.toggle('active', t.dataset.tab === tab);
     });
-    $('requirement-content').style.display = tab === 'REQ' ? 'block' : 'none';
-    $('env-content').style.display = tab === 'REQ' ? 'none' : 'block';
-    if (tab === 'REQ') {
-        renderRequirements();
-    } else {
-        renderEnv(tab);
-    }
+    renderEnv(tab);
 }
 
 // ============ 需求 ============
 
-function renderRequirements() {
-    const list = currentProject.requirements || [];
-    const tbody = $('requirement-list');
-    if (!list.length) {
-        tbody.innerHTML = '<tr><td colspan="7" class="text-muted">暂无需求，请在上方创建</td></tr>';
-        return;
-    }
-    tbody.innerHTML = list.map(function (r) {
-        return '<tr>' +
-            '<td>' + esc(r.requirementName) + '</td>' +
-            '<td>' + (r.requirementUrl ? '<a href="' + esc(r.requirementUrl) + '" target="_blank">' + esc(r.requirementUrl) + '</a>' : '—') + '</td>' +
-            '<td><code>' + esc(r.branchName) + '</code></td>' +
-            '<td>' + (r.branchSource === 'NEW' ? '新建' : '远程拉取') + '</td>' +
-            '<td>' + envName(r.currentEnv) + '</td>' +
-            '<td>' + statusBadge(r.status) + '</td>' +
-            '<td>' + fmtTime(r.createTime) + '</td>' +
-            '</tr>';
-    }).join('');
+function openCreateRequirement(projectId) {
+    createReqProjectId = projectId;
+    ['req-name', 'req-url', 'req-branch'].forEach(function (id) { $(id).value = ''; });
+    $('req-source').value = 'NEW';
+    $('req-modal').style.display = 'flex';
+    $('req-name').focus();
+}
+
+function closeReqModal() {
+    $('req-modal').style.display = 'none';
+    createReqProjectId = null;
 }
 
 async function createRequirement() {
     const name = $('req-name').value.trim();
     const branch = $('req-branch').value.trim();
     if (!name || !branch) { showMsg('请填写需求名称和分支名称', 'error'); return; }
+    if (!createReqProjectId) { showMsg('未选择所属项目', 'error'); return; }
     try {
         await api('/requirement/create', {
             method: 'POST',
             body: JSON.stringify({
-                projectId: currentProject.project.projectId,
+                projectId: createReqProjectId,
                 requirementName: name,
                 requirementUrl: $('req-url').value.trim(),
                 branchName: branch,
@@ -300,11 +317,40 @@ async function createRequirement() {
             })
         });
         showMsg('需求创建成功，分支已进入开发环境待合并列表', 'success');
-        ['req-name', 'req-url', 'req-branch'].forEach(function (id) { $(id).value = ''; });
-        await refreshProjectDetail();
-        renderRequirements();
+        closeReqModal();
+        loadMyRequirements();
     } catch (e) {
         showMsg('创建需求失败：' + e.message, 'error');
+    }
+}
+
+// 当前用户的需求列表（需求管理）
+async function loadMyRequirements() {
+    const tbody = $('my-requirement-list');
+    tbody.innerHTML = '<tr><td colspan="8" class="text-muted">加载中…</td></tr>';
+    try {
+        const requirements = await api('/requirement/list?userId=' + currentUser.userId);
+        const projects = await api('/project/list');
+        const projectNames = {};
+        projects.forEach(function (p) { projectNames[p.projectId] = p.projectName; });
+        if (!requirements || !requirements.length) {
+            tbody.innerHTML = '<tr><td colspan="8" class="text-muted">暂无需求，请在「项目管理」中点击项目旁的【创建需求】</td></tr>';
+            return;
+        }
+        tbody.innerHTML = requirements.map(function (r) {
+            return '<tr>' +
+                '<td>' + esc(r.requirementName) + '</td>' +
+                '<td>' + esc(projectNames[r.projectId] || '—') + '</td>' +
+                '<td>' + (r.requirementUrl ? '<a href="' + esc(r.requirementUrl) + '" target="_blank">' + esc(r.requirementUrl) + '</a>' : '—') + '</td>' +
+                '<td><code>' + esc(r.branchName) + '</code></td>' +
+                '<td>' + (r.branchSource === 'NEW' ? '新建' : '远程拉取') + '</td>' +
+                '<td>' + envName(r.currentEnv) + '</td>' +
+                '<td>' + statusBadge(r.status) + '</td>' +
+                '<td>' + fmtTime(r.createTime) + '</td>' +
+                '</tr>';
+        }).join('');
+    } catch (e) {
+        tbody.innerHTML = '<tr><td colspan="8" class="text-muted">加载需求失败：' + esc(e.message) + '</td></tr>';
     }
 }
 
@@ -518,12 +564,7 @@ async function crAudit(mergeId, status) {
 }
 
 async function reloadEnv() {
-    if (currentEnvTab === 'REQ') {
-        await refreshProjectDetail();
-        renderRequirements();
-    } else {
-        renderEnv(currentEnvTab);
-    }
+    renderEnv(currentEnvTab);
 }
 
 async function refreshProjectDetail() {

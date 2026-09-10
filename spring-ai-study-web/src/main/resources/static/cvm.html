@@ -49,54 +49,81 @@
 
     <!-- 主内容 -->
     <div id="main-section" style="display:none">
-        <!-- 项目列表 -->
-        <section class="panel">
-            <div class="panel-header">
-                <h3>项目列表</h3>
-                <button class="btn btn-primary" onclick="toggleCreateProject()">+ 注册项目</button>
-            </div>
-            <div id="create-project-form" class="form-row-wrap" style="display:none">
-                <input type="text" id="cp-code" placeholder="项目ID（编号）" required>
-                <input type="text" id="cp-name" placeholder="项目名称" required>
-                <input type="text" id="cp-desc" placeholder="项目描述">
-                <input type="text" id="cp-git-url" placeholder="Git地址（可空）">
-                <input type="text" id="cp-git-user" placeholder="Git账号（可空）">
-                <input type="password" id="cp-git-token" placeholder="Git令牌（可空）">
-                <button class="btn btn-primary" onclick="createProject()">确认注册</button>
-                <button class="btn" onclick="toggleCreateProject(false)">取消</button>
-            </div>
-            <div id="project-list"></div>
-        </section>
+        <div class="cvm-layout">
+            <!-- 左侧导航 -->
+            <aside class="side-nav">
+                <button class="side-nav-item active" id="nav-project" onclick="switchSideNav('project')">📦 项目管理</button>
+                <button class="side-nav-item" id="nav-requirement" onclick="switchSideNav('requirement')">📋 需求管理</button>
+                <button class="side-nav-item" id="nav-environment" onclick="switchSideNav('environment')">🌐 环境管理</button>
+            </aside>
 
-        <!-- 项目详情 -->
-        <section class="panel" id="project-detail-panel" style="display:none">
-            <div class="panel-header">
-                <h3 id="project-title"></h3>
-                <button class="btn" onclick="backToProjects()">← 返回项目列表</button>
-            </div>
-            <div id="project-meta" class="text-muted"></div>
-            <div class="env-tabs" id="env-tabs"></div>
-            <div id="requirement-content" style="display:none">
-                <h4>创建需求</h4>
-                <div class="form-row-wrap">
-                    <input type="text" id="req-name" placeholder="需求名称" required>
-                    <input type="text" id="req-url" placeholder="需求地址">
-                    <input type="text" id="req-branch" placeholder="分支名称" required>
-                    <select id="req-source">
-                        <option value="NEW">新建分支</option>
-                        <option value="REMOTE">从远程已有拉取</option>
-                    </select>
-                    <button class="btn btn-primary" onclick="createRequirement()">创建需求</button>
+            <!-- 右侧内容区 -->
+            <div class="side-content">
+                <!-- 项目管理视图 -->
+                <div id="view-project" class="side-view">
+                    <section class="panel">
+                        <div class="panel-header">
+                            <h3>项目列表</h3>
+                            <button class="btn btn-primary" onclick="toggleCreateProject()">+ 注册项目</button>
+                        </div>
+                        <div id="create-project-form" class="form-row-wrap" style="display:none">
+                            <input type="text" id="cp-code" placeholder="项目ID（编号）" required>
+                            <input type="text" id="cp-name" placeholder="项目名称" required>
+                            <input type="text" id="cp-desc" placeholder="项目描述">
+                            <input type="text" id="cp-git-url" placeholder="Git地址（可空）">
+                            <input type="text" id="cp-git-user" placeholder="Git账号（可空）">
+                            <input type="password" id="cp-git-token" placeholder="Git令牌（可空）">
+                            <button class="btn btn-primary" onclick="createProject()">确认注册</button>
+                            <button class="btn" onclick="toggleCreateProject(false)">取消</button>
+                        </div>
+                        <div id="project-list"></div>
+                    </section>
                 </div>
-                <table class="data-table">
-                    <thead>
-                    <tr><th>需求名称</th><th>需求地址</th><th>分支</th><th>来源</th><th>当前环境</th><th>状态</th><th>创建时间</th></tr>
-                    </thead>
-                    <tbody id="requirement-list"></tbody>
-                </table>
+
+                <!-- 需求管理视图 -->
+                <div id="view-requirement" class="side-view" style="display:none">
+                    <section class="panel">
+                        <div class="panel-header"><h3>我的需求</h3></div>
+                        <table class="data-table">
+                            <thead>
+                            <tr><th>需求名称</th><th>所属项目</th><th>需求地址</th><th>分支名称</th><th>来源</th><th>当前环境</th><th>状态</th><th>创建时间</th></tr>
+                            </thead>
+                            <tbody id="my-requirement-list"></tbody>
+                        </table>
+                    </section>
+                </div>
+
+                <!-- 环境管理视图 -->
+                <div id="view-environment" class="side-view" style="display:none">
+                    <section class="panel">
+                        <div class="panel-header">
+                            <h3 id="env-project-title">环境管理</h3>
+                            <button class="btn" onclick="backToProjectList()">← 返回项目列表</button>
+                        </div>
+                        <div class="env-tabs" id="env-tabs"></div>
+                        <div id="env-content"></div>
+                    </section>
+                </div>
             </div>
-            <div id="env-content"></div>
-        </section>
+        </div>
+    </div>
+
+    <!-- 创建需求弹窗 -->
+    <div id="req-modal" class="modal-mask" style="display:none">
+        <div class="modal">
+            <h3>创建需求</h3>
+            <div class="form-row-wrap">
+                <input type="text" id="req-name" placeholder="需求名称" required>
+                <input type="text" id="req-url" placeholder="需求地址">
+                <input type="text" id="req-branch" placeholder="分支名称" required>
+                <select id="req-source">
+                    <option value="NEW">新建分支</option>
+                    <option value="REMOTE">从远程已有拉取</option>
+                </select>
+                <button class="btn btn-primary" onclick="createRequirement()">创建</button>
+                <button class="btn" onclick="closeReqModal()">取消</button>
+            </div>
+        </div>
     </div>
 </div>
 <script src="/js/cvm.js"></script>

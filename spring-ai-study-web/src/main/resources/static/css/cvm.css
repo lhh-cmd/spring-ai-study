@@ -369,3 +369,92 @@ input:focus, select:focus, textarea:focus {
 /* 文本信息 */
 .text-muted { color: #8b949e; font-size: 13px; }
 .mt-8 { margin-top: 8px; }
+
+/* ============ 左侧导航布局 ============ */
+.cvm-layout {
+    display: flex;
+    gap: 16px;
+    align-items: flex-start;
+}
+
+.side-nav {
+    flex: 0 0 160px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    background: #f6f8fa;
+    border: 1px solid #e1e4e8;
+    border-radius: 8px;
+    padding: 8px;
+}
+
+.side-nav-item {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 10px 14px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: #24292f;
+    font-size: 14px;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+}
+
+.side-nav-item:hover {
+    background: #eaeef2;
+}
+
+.side-nav-item.active {
+    background: #667eea;
+    color: #fff;
+}
+
+.side-content {
+    flex: 1;
+    min-width: 0;
+}
+
+.side-view {
+    display: none;
+}
+
+/* ============ 项目卡片操作按钮 ============ */
+.project-card {
+    cursor: default;
+}
+
+.project-card-actions {
+    display: flex;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+/* ============ 弹窗 ============ */
+.modal-mask {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.45);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+}
+
+.modal {
+    background: #fff;
+    border-radius: 10px;
+    padding: 20px 24px;
+    max-width: 560px;
+    width: 92%;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.18);
+}
+
+.modal h3 {
+    margin-bottom: 12px;
+    color: #1f2d3d;
+}

@@ -21,6 +21,11 @@ public interface CvmRequirementService {
     List<CvmRequirement> listByProject(Long projectId);
 
     /**
+     * 根据创建人查询需求列表
+     */
+    List<CvmRequirement> listByUser(Long creatorUserId);
+
+    /**
      * 根据需求ID查询
      */
     CvmRequirement getById(Long requirementId);
