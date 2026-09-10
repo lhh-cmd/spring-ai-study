@@ -63,4 +63,12 @@
         </dependencies>
     </dependencyManagement>
 
+    <!-- Spring AI 0.8.x 发布在 Spring 官方 milestone 仓库 -->
+    <repositories>
+        <repository>
+            <id>spring-milestones</id>
+            <url>https://repo.spring.io/milestone</url>
+        </repository>
+    </repositories>
+
 </project>

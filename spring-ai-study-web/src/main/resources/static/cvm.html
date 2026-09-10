@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>代码版本管理系统 - CVM</title>
+    <link rel="stylesheet" href="/css/cvm.css">
+</head>
+<body>
+<div class="cvm-container">
+    <!-- 顶部导航 -->
+    <nav class="top-nav">
+        <span class="brand">🔀 代码版本管理系统</span>
+        <span class="nav-right">
+            <a href="/index.html">摸鱼了么</a>
+            <span id="top-user"></span>
+            <button id="btn-logout" class="btn-link" onclick="logout()" style="display:none">退出</button>
+        </span>
+    </nav>
+
+    <div id="msg-box" class="msg"></div>
+
+    <!-- 登录 / 注册 -->
+    <div id="auth-section">
+        <div class="auth-card">
+            <h2>🔀 代码版本管理系统</h2>
+            <div class="tabs">
+                <button class="tab-btn active" onclick="switchAuthTab('login', this)">登录</button>
+                <button class="tab-btn" onclick="switchAuthTab('register', this)">注册</button>
+            </div>
+            <div id="login-form">
+                <form onsubmit="handleLogin(event)">
+                    <input type="text" id="login-username" placeholder="用户名" required>
+                    <input type="password" id="login-password" placeholder="密码" required>
+                    <button type="submit" class="btn btn-primary">登录</button>
+                </form>
+            </div>
+            <div id="register-form" style="display:none">
+                <form onsubmit="handleRegister(event)">
+                    <input type="text" id="reg-username" placeholder="用户名" required>
+                    <input type="password" id="reg-password" placeholder="密码" required>
+                    <input type="text" id="reg-nickname" placeholder="昵称">
+                    <button type="submit" class="btn btn-primary">注册</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- 主内容 -->
+    <div id="main-section" style="display:none">
+        <!-- 项目列表 -->
+        <section class="panel">
+            <div class="panel-header">
+                <h3>项目列表</h3>
+                <button class="btn btn-primary" onclick="toggleCreateProject()">+ 注册项目</button>
+            </div>
+            <div id="create-project-form" class="form-row-wrap" style="display:none">
+                <input type="text" id="cp-code" placeholder="项目ID（编号）" required>
+                <input type="text" id="cp-name" placeholder="项目名称" required>
+                <input type="text" id="cp-desc" placeholder="项目描述">
+                <input type="text" id="cp-git-url" placeholder="Git地址（可空）">
+                <input type="text" id="cp-git-user" placeholder="Git账号（可空）">
+                <input type="password" id="cp-git-token" placeholder="Git令牌（可空）">
+                <button class="btn btn-primary" onclick="createProject()">确认注册</button>
+                <button class="btn" onclick="toggleCreateProject(false)">取消</button>
+            </div>
+            <div id="project-list"></div>
+        </section>
+
+        <!-- 项目详情 -->
+        <section class="panel" id="project-detail-panel" style="display:none">
+            <div class="panel-header">
+                <h3 id="project-title"></h3>
+                <button class="btn" onclick="backToProjects()">← 返回项目列表</button>
+            </div>
+            <div id="project-meta" class="text-muted"></div>
+            <div class="env-tabs" id="env-tabs"></div>
+            <div id="requirement-content" style="display:none">
+                <h4>创建需求</h4>
+                <div class="form-row-wrap">
+                    <input type="text" id="req-name" placeholder="需求名称" required>
+                    <input type="text" id="req-url" placeholder="需求地址">
+                    <input type="text" id="req-branch" placeholder="分支名称" required>
+                    <select id="req-source">
+                        <option value="NEW">新建分支</option>
+                        <option value="REMOTE">从远程已有拉取</option>
+                    </select>
+                    <button class="btn btn-primary" onclick="createRequirement()">创建需求</button>
+                </div>
+                <table class="data-table">
+                    <thead>
+                    <tr><th>需求名称</th><th>需求地址</th><th>分支</th><th>来源</th><th>当前环境</th><th>状态</th><th>创建时间</th></tr>
+                    </thead>
+                    <tbody id="requirement-list"></tbody>
+                </table>
+            </div>
+            <div id="env-content"></div>
+        </section>
+
+        <!-- 操作日志 -->
+        <section class="panel">
+            <div class="panel-header"><h3>操作日志</h3></div>
+            <table class="data-table">
+                <thead>
+                <tr><th style="width:170px">时间</th><th style="width:120px">操作</th><th>详情</th></tr>
+                </thead>
+                <tbody id="log-list"></tbody>
+            </table>
+        </section>
+    </div>
+</div>
+<script src="/js/cvm.js"></script>
+</body>
+</html>
