@@ -17,6 +17,7 @@ public enum OperationAction {
     MERGE_CONFLICT("合并冲突"),
     RESOLVE_CONFLICT("解决冲突并重新合并"),
     NEXT_ENV("进入下一环境"),
+    EXIT_INTEGRATION("退出集成"),
     CR_PASS("CR通过"),
     CR_REJECT("CR驳回"),
     REJECT_MERGE("驳回合并"),

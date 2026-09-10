@@ -42,6 +42,24 @@ public class CvmMergeController {
     }
 
     /**
+     * 退出集成：将已合入公共分支的分支退出，回到待集成列表
+     */
+    @PostMapping("/exit-integration")
+    public ResponseEntity<Map<String, Object>> exitIntegration(@RequestParam Long mergeId, @RequestParam Long operatorUserId) {
+        Map<String, Object> response = new HashMap<>();
+        try {
+            cvmMergeService.exitIntegration(mergeId, operatorUserId);
+            response.put("success", true);
+            response.put("message", "已退出集成，分支回到待集成列表");
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            response.put("success", false);
+            response.put("message", e.getMessage());
+            return ResponseEntity.badRequest().body(response);
+        }
+    }
+
+    /**
      * 解决冲突并重新合并
      */
     @PostMapping("/resolve-conflict")

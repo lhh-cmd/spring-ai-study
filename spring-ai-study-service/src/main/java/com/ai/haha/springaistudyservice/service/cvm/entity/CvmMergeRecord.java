@@ -1,6 +1,8 @@
 package com.ai.haha.springaistudyservice.service.cvm.entity;
 
+import com.baomidou.mybatisplus.annotation.FieldStrategy;
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.fasterxml.jackson.annotation.JsonFormat;
@@ -73,21 +75,25 @@ public class CvmMergeRecord {
     /**
      * 冲突文件列表（JSON数组）
      */
+    @TableField(updateStrategy = FieldStrategy.IGNORED)
     private String conflictFiles;
 
     /**
      * 冲突详情
      */
+    @TableField(updateStrategy = FieldStrategy.IGNORED)
     private String conflictDetail;
 
     /**
      * 解决冲突步骤（给用户展示）
      */
+    @TableField(updateStrategy = FieldStrategy.IGNORED)
     private String resolveSteps;
 
     /**
      * 合并后的提交ID
      */
+    @TableField(updateStrategy = FieldStrategy.IGNORED)
     private String mergeCommit;
 
     /**
@@ -98,6 +104,7 @@ public class CvmMergeRecord {
     /**
      * 合并时间
      */
+    @TableField(updateStrategy = FieldStrategy.IGNORED)
     private LocalDateTime mergeTime;
 
     /**

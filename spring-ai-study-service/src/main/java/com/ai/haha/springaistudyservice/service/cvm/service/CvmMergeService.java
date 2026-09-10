@@ -22,6 +22,11 @@ public interface CvmMergeService {
     CvmMergeRecordView resolveConflict(Long mergeId, Long operatorUserId);
 
     /**
+     * 退出集成：将已合入当前环境公共分支的分支退出，回到待集成列表
+     */
+    void exitIntegration(Long mergeId, Long operatorUserId);
+
+    /**
      * 当前环境验证完成后，将分支放入下一环境待合并列表
      */
     void nextEnv(Long requirementId, Long operatorUserId);

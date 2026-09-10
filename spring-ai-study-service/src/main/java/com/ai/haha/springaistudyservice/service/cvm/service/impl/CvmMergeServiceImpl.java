@@ -145,6 +145,55 @@ public class CvmMergeServiceImpl implements CvmMergeService {
 
     @Override
     @Transactional
+    public void exitIntegration(Long mergeId, Long operatorUserId) {
+        CvmMergeRecord record = mustGetMergeRecord(mergeId);
+        if (!MergeStatus.MERGED.getCode().equals(record.getStatus())) {
+            throw new RuntimeException("只有已集成的分支才能退出集成");
+        }
+        CvmProject project = projectMapper.selectByProjectId(record.getProjectId());
+        if (project == null) {
+            throw new RuntimeException("项目不存在");
+        }
+        CvmRequirement requirement = requirementMapper.selectByRequirementId(record.getRequirementId());
+        if (requirement == null) {
+            throw new RuntimeException("需求不存在");
+        }
+        if (!record.getTargetEnv().equals(requirement.getCurrentEnv())) {
+            throw new RuntimeException("该分支已进入下一环境，不能再从本环境退出集成");
+        }
+        if (RequirementStatus.PUBLISHED.getCode().equals(requirement.getStatus())
+                || RequirementStatus.MERGED_MASTER.getCode().equals(requirement.getStatus())) {
+            throw new RuntimeException("该分支已发布/已合并 master，不可退出集成");
+        }
+
+        // 真实 git 物理回滚（尽力而为，不影响流程状态）
+        GitOperationService git = gitServiceFactory.getService(project);
+        try {
+            git.exitIntegration(project, record.getBranchName(), record.getTargetBranch(), record.getMergeCommit());
+        } catch (Exception e) {
+            log.warn("退出集成物理回滚失败（不影响流程状态）：{}", e.getMessage());
+        }
+
+        record.setStatus(MergeStatus.PENDING.getCode());
+        record.setMergeCommit(null);
+        record.setMergeTime(null);
+        record.setConflictFiles(null);
+        record.setConflictDetail(null);
+        record.setResolveSteps(null);
+        record.setUpdateTime(LocalDateTime.now());
+        mergeRecordMapper.updateById(record);
+
+        requirement.setStatus(RequirementStatus.DEVELOPING.getCode());
+        requirement.setUpdateTime(LocalDateTime.now());
+        requirementMapper.updateById(requirement);
+
+        operationLogService.record(project.getProjectId(), requirement.getRequirementId(), mergeId, operatorUserId,
+                OperationAction.EXIT_INTEGRATION,
+                "分支 " + record.getBranchName() + " 已从 " + record.getTargetBranch() + " 退出集成，回到待集成列表");
+    }
+
+    @Override
+    @Transactional
     public void nextEnv(Long requirementId, Long operatorUserId) {
         CvmRequirement requirement = requirementMapper.selectByRequirementId(requirementId);
         if (requirement == null) {

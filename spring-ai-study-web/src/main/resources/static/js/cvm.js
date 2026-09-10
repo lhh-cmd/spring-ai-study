@@ -374,8 +374,9 @@ function renderEnvContent(envCode, records) {
     const box = $('env-content');
 
     let html = '<div class="sub-section">' +
-        '<h4>🕐 ' + cfg.name + ' 待合并列表（合并目标：' + cfg.branch + '）' +
-        (envCode === 'RELEASE' ? '　<span class="text-muted">正式环境合并前需完成 CR 审核</span>' : '') +
+        '<h4>🕐 ' + cfg.name + ' 待集成列表（集成到公共分支 ' + cfg.branch + '）' +
+        (envCode === 'DEV' ? '　<span class="text-muted">即用户新建的开发分支</span>' : '') +
+        (envCode === 'RELEASE' ? '　<span class="text-muted">正式环境集成前需完成 CR 审核</span>' : '') +
         '</h4>';
 
     if (!pending.length) {
@@ -401,12 +402,12 @@ function renderEnvContent(envCode, records) {
     }
     html += '</div>';
 
-    html += '<div class="sub-section"><h4>✅ ' + cfg.name + ' 已合并列表（分支 + 合并人 + 时间）</h4>';
+    html += '<div class="sub-section"><h4>✅ ' + cfg.name + ' 已集成列表（分支 + 集成人 + 时间）</h4>';
     if (!merged.length) {
         html += '<div class="text-muted">暂无已合并的分支</div>';
     } else {
         html += '<table class="data-table"><thead><tr>' +
-            '<th>分支</th><th>需求</th><th>合并人</th><th>Commit</th><th>合并时间</th><th>操作</th>' +
+            '<th>分支</th><th>需求</th><th>集成人</th><th>Commit</th><th>集成时间</th><th>操作</th>' +
             '</tr></thead><tbody>';
         merged.forEach(function (r) {
             html += '<tr>' +
@@ -426,36 +427,43 @@ function renderEnvContent(envCode, records) {
 }
 
 function pendingActions(envCode, r) {
+    const verb = '集成到 ' + ENV_CONFIG[envCode].branch;
     if (r.status === 'CONFLICT') {
-        return '<button class="btn btn-warning btn-sm" onclick="resolveConflict(\'' + r.mergeId + '\')">解决冲突并合并</button>';
+        return '<button class="btn btn-warning btn-sm" onclick="resolveConflict(\'' + r.mergeId + '\')">解决冲突并集成</button>';
     }
     if (r.status === 'REJECTED') {
-        return '<span class="text-muted">CR 已驳回，可通过 CR 后重新合并</span>';
+        return '<span class="text-muted">CR 已驳回，可通过 CR 后重新集成</span>';
     }
     // PENDING
     if (envCode === 'RELEASE') {
         if (r.crStatus === 'PASS') {
-            return '<button class="btn btn-primary btn-sm" onclick="doMerge(\'' + r.mergeId + '\')">合并到 ' + ENV_CONFIG[envCode].branch + '</button>';
+            return '<button class="btn btn-primary btn-sm" onclick="doMerge(\'' + r.mergeId + '\')">' + verb + '</button>';
         }
         return '<span class="text-muted">待CR审核</span> ' +
             '<input type="text" id="cr-comment-' + r.mergeId + '" placeholder="审核意见（可空）" style="width:180px"> ' +
             '<button class="btn btn-success btn-sm" onclick="crAudit(\'' + r.mergeId + '\',\'PASS\')">CR通过</button> ' +
             '<button class="btn btn-danger btn-sm" onclick="crAudit(\'' + r.mergeId + '\',\'REJECT\')">CR驳回</button>';
     }
-    return '<button class="btn btn-primary btn-sm" onclick="doMerge(\'' + r.mergeId + '\')">合并到 ' + ENV_CONFIG[envCode].branch + '</button>';
+    return '<button class="btn btn-primary btn-sm" onclick="doMerge(\'' + r.mergeId + '\')">' + verb + '</button>';
 }
 
 function mergedActions(envCode, r) {
     const reqStatus = requirementStatus(r.requirementId);
+    const reqEnv = requirementCurrentEnv(r.requirementId);
+    const movedOn = reqEnv && reqEnv !== envCode;
+    if (movedOn) {
+        return '<span class="text-muted">已进入' + envName(reqEnv) + '</span>';
+    }
+    const exitBtn = '<button class="btn btn-danger btn-sm" onclick="exitIntegration(\'' + r.mergeId + '\')">退出集成</button> ';
     if (envCode !== 'RELEASE') {
         if (reqStatus === 'MERGED_MASTER' || reqStatus === 'PUBLISHED') {
             return '<span class="text-muted">' + statusText(reqStatus) + '</span>';
         }
-        return '<button class="btn btn-success btn-sm" onclick="nextEnv(\'' + r.requirementId + '\')">验证完成，进入下一环境</button>';
+        return exitBtn + '<button class="btn btn-success btn-sm" onclick="nextEnv(\'' + r.requirementId + '\')">验证完成，进入下一环境</button>';
     }
     // RELEASE
     if (reqStatus === 'MERGED') {
-        return '<button class="btn btn-success btn-sm" onclick="publish(\'' + r.requirementId + '\')">发布到线上</button>';
+        return exitBtn + '<button class="btn btn-success btn-sm" onclick="publish(\'' + r.requirementId + '\')">发布到线上</button>';
     }
     if (reqStatus === 'PUBLISHED') {
         return '<button class="btn btn-warning btn-sm" onclick="mergeMaster(\'' + r.requirementId + '\')">合并 master</button> <span class="text-muted">已发布</span>';
@@ -504,6 +512,18 @@ async function resolveConflict(mergeId) {
         reloadEnv();
     } catch (e) {
         showMsg('解决冲突失败：' + e.message, 'error');
+    }
+}
+
+async function exitIntegration(mergeId) {
+    if (!confirm('确认将该分支从当前环境公共分支退出集成？（分支将回到待集成列表）')) return;
+    try {
+        await api('/merge/exit-integration?mergeId=' + mergeId + '&operatorUserId=' + currentUser.userId, { method: 'POST' });
+        showMsg('已退出集成，分支回到待集成列表', 'success');
+        await refreshProjectDetail();
+        reloadEnv();
+    } catch (e) {
+        showMsg('退出集成失败：' + e.message, 'error');
     }
 }
 
@@ -577,6 +597,12 @@ function requirementStatus(requirementId) {
     const list = (currentProject && currentProject.requirements) || [];
     const r = list.find(function (x) { return String(x.requirementId) === String(requirementId); });
     return r ? r.status : '';
+}
+
+function requirementCurrentEnv(requirementId) {
+    const list = (currentProject && currentProject.requirements) || [];
+    const r = list.find(function (x) { return String(x.requirementId) === String(requirementId); });
+    return r ? r.currentEnv : '';
 }
 
 function statusText(status) {
