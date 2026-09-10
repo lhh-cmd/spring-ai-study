@@ -12,6 +12,7 @@
     <nav class="top-nav">
         <span class="brand">🔀 代码版本管理系统</span>
         <span class="nav-right">
+            <a href="/cvm-log.html">📋 操作日志</a>
             <a href="/index.html">摸鱼了么</a>
             <span id="top-user"></span>
             <button id="btn-logout" class="btn-link" onclick="logout()" style="display:none">退出</button>
@@ -95,17 +96,6 @@
                 </table>
             </div>
             <div id="env-content"></div>
-        </section>
-
-        <!-- 操作日志 -->
-        <section class="panel">
-            <div class="panel-header"><h3>操作日志</h3></div>
-            <table class="data-table">
-                <thead>
-                <tr><th style="width:170px">时间</th><th style="width:120px">操作</th><th>详情</th></tr>
-                </thead>
-                <tbody id="log-list"></tbody>
-            </table>
         </section>
     </div>
 </div>

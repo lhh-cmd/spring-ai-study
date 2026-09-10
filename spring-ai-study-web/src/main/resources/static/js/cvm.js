@@ -91,7 +91,6 @@ function enterApp() {
     $('top-user').textContent = '👤 ' + (currentUser.nickname || currentUser.username);
     $('btn-logout').style.display = 'inline-block';
     loadProjects();
-    loadLogs();
 }
 
 function switchAuthTab(tab, el) {
@@ -209,7 +208,6 @@ async function createProject() {
         toggleCreateProject(false);
         ['cp-code', 'cp-name', 'cp-desc', 'cp-git-url', 'cp-git-user', 'cp-git-token'].forEach(function (id) { $(id).value = ''; });
         loadProjects();
-        loadLogs();
     } catch (e) {
         showMsg('注册失败：' + e.message, 'error');
     }
@@ -225,7 +223,6 @@ async function openProject(projectId) {
         $('project-detail-panel').style.display = 'block';
         renderEnvTabs();
         switchEnvTab('REQ');
-        loadLogs(p.projectId);
         $('project-detail-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
     } catch (e) {
         showMsg('打开项目失败：' + e.message, 'error');
@@ -235,7 +232,6 @@ async function openProject(projectId) {
 function backToProjects() {
     currentProject = null;
     $('project-detail-panel').style.display = 'none';
-    loadLogs();
 }
 
 function renderEnvTabs() {
@@ -307,7 +303,6 @@ async function createRequirement() {
         ['req-name', 'req-url', 'req-branch'].forEach(function (id) { $(id).value = ''; });
         await refreshProjectDetail();
         renderRequirements();
-        loadLogs(currentProject.project.projectId);
     } catch (e) {
         showMsg('创建需求失败：' + e.message, 'error');
     }
@@ -473,7 +468,6 @@ async function nextEnv(requirementId) {
         showMsg('已进入下一环境待合并列表', 'success');
         await refreshProjectDetail();
         reloadEnv();
-        loadLogs(currentProject.project.projectId);
     } catch (e) {
         showMsg('进入下一环境失败：' + e.message, 'error');
     }
@@ -486,7 +480,6 @@ async function publish(requirementId) {
         showMsg('发布成功', 'success');
         await refreshProjectDetail();
         reloadEnv();
-        loadLogs(currentProject.project.projectId);
     } catch (e) {
         showMsg('发布失败：' + e.message, 'error');
     }
@@ -499,7 +492,6 @@ async function mergeMaster(requirementId) {
         showMsg('已合并 master，其他环境已基于 master 更新', 'success');
         await refreshProjectDetail();
         reloadEnv();
-        loadLogs(currentProject.project.projectId);
     } catch (e) {
         showMsg('合并 master 失败：' + e.message, 'error');
     }
@@ -536,36 +528,6 @@ async function reloadEnv() {
 
 async function refreshProjectDetail() {
     currentProject = await api('/project/detail?projectId=' + currentProject.project.projectId);
-}
-
-// ============ 操作日志 ============
-
-async function loadLogs(projectId) {
-    try {
-        const url = projectId ? '/log/list?projectId=' + projectId : '/log/list';
-        const logs = await api(url);
-        const tbody = $('log-list');
-        if (!logs || !logs.length) {
-            tbody.innerHTML = '<tr><td colspan="3" class="text-muted">暂无操作日志</td></tr>';
-            return;
-        }
-        tbody.innerHTML = logs.map(function (l) {
-            return '<tr><td>' + fmtTime(l.createTime) + '</td><td>' + esc(actionText(l.action)) + '</td><td>' + esc(l.detail || '') + '</td></tr>';
-        }).join('');
-    } catch (e) {
-        $('log-list').innerHTML = '<tr><td colspan="3" class="text-muted">加载日志失败</td></tr>';
-    }
-}
-
-function actionText(action) {
-    const map = {
-        REGISTER_USER: '注册用户', LOGIN_USER: '用户登录', CREATE_PROJECT: '注册项目',
-        INIT_ENVIRONMENT: '初始化环境', CREATE_ENVIRONMENT: '创建环境', CREATE_REQUIREMENT: '创建需求',
-        CREATE_BRANCH: '创建分支', PULL_BRANCH: '拉取分支', MERGE: '合并', MERGE_CONFLICT: '合并冲突',
-        RESOLVE_CONFLICT: '解决冲突', NEXT_ENV: '进入下一环境', CR_PASS: 'CR通过', CR_REJECT: 'CR驳回',
-        REJECT_MERGE: '驳回合并', PUBLISH: '发布', MERGE_MASTER: '合并master', RESET_ENV: '环境重置'
-    };
-    return map[action] || action;
 }
 
 // ============ 展示辅助 ============

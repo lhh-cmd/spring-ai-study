@@ -1,6 +1,6 @@
 package com.ai.haha.springaistudyweb.controller.cvm;
 
-import com.ai.haha.springaistudyservice.service.cvm.entity.CvmOperationLog;
+import com.ai.haha.springaistudyservice.service.cvm.dto.CvmOperationLogView;
 import com.ai.haha.springaistudyservice.service.cvm.service.CvmOperationLogService;
 import jakarta.annotation.Resource;
 import org.springframework.http.ResponseEntity;
@@ -30,7 +30,7 @@ public class CvmOperationLogController {
     public ResponseEntity<Map<String, Object>> list(@RequestParam(required = false) Long projectId) {
         Map<String, Object> response = new HashMap<>();
         try {
-            List<CvmOperationLog> logs = projectId != null
+            List<CvmOperationLogView> logs = projectId != null
                     ? cvmOperationLogService.listByProject(projectId)
                     : cvmOperationLogService.listAll();
             response.put("success", true);

@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>操作日志 - 代码版本管理系统</title>
+    <link rel="stylesheet" href="/css/cvm.css">
+</head>
+<body>
+<div class="cvm-container">
+    <!-- 顶部导航 -->
+    <nav class="top-nav">
+        <span class="brand">🔀 操作日志</span>
+        <span class="nav-right">
+            <a href="/cvm.html">← 返回代码版本管理</a>
+            <span id="top-user"></span>
+        </span>
+    </nav>
+
+    <!-- 筛选 -->
+    <section class="panel">
+        <div class="form-row-wrap">
+            <select id="filter-project">
+                <option value="">全部项目</option>
+            </select>
+            <button class="btn btn-primary" onclick="loadLogs()">查询</button>
+            <span id="log-count" class="text-muted"></span>
+        </div>
+    </section>
+
+    <!-- 日志列表 -->
+    <section class="panel">
+        <table class="data-table">
+            <thead>
+            <tr>
+                <th style="width:170px">时间</th>
+                <th style="width:110px">操作人</th>
+                <th style="width:150px">项目</th>
+                <th style="width:120px">操作</th>
+                <th>详情</th>
+            </tr>
+            </thead>
+            <tbody id="log-list">
+            <tr><td colspan="5" class="text-muted">加载中…</td></tr>
+            </tbody>
+        </table>
+    </section>
+</div>
+<script src="/js/cvm-log.js"></script>
+</body>
+</html>

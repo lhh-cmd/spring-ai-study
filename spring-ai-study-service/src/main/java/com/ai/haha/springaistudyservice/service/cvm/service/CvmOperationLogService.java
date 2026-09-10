@@ -1,6 +1,6 @@
 package com.ai.haha.springaistudyservice.service.cvm.service;
 
-import com.ai.haha.springaistudyservice.service.cvm.entity.CvmOperationLog;
+import com.ai.haha.springaistudyservice.service.cvm.dto.CvmOperationLogView;
 import com.ai.haha.springaistudyservice.service.cvm.enums.OperationAction;
 
 import java.util.List;
@@ -16,12 +16,12 @@ public interface CvmOperationLogService {
     void record(Long projectId, Long requirementId, Long mergeId, Long operatorUserId, OperationAction action, String detail);
 
     /**
-     * 根据项目查询日志（按时间倒序）
+     * 根据项目查询日志（按时间倒序，含项目名/操作人）
      */
-    List<CvmOperationLog> listByProject(Long projectId);
+    List<CvmOperationLogView> listByProject(Long projectId);
 
     /**
-     * 查询全部日志
+     * 查询全部日志（按时间倒序，含项目名/操作人）
      */
-    List<CvmOperationLog> listAll();
+    List<CvmOperationLogView> listAll();
 }
