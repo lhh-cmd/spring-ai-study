@@ -52,4 +52,13 @@ public interface GitOperationService {
      * 将 targetBranch 重置到 sourceBranch 指向的提交（用于「基于master更新dev」）
      */
     void updateBranchFrom(CvmProject project, String targetBranch, String sourceBranch);
+
+    /**
+     * 无冲突检测合并：用于「进入正式环境」批量合入 release、以及「合并master后重建环境」时
+     * 将既有已集成分支重新合入重建后的环境分支（这些分支本就应在目标分支上，强制合并即可）。
+     * 默认实现走 {@link #resolveConflictAndMerge}（真实 git 合并不带冲突检测，冲突会返回冲突结果）。
+     */
+    default GitMergeResult mergeNoConflict(CvmProject project, String sourceBranch, String targetBranch) {
+        return resolveConflictAndMerge(project, sourceBranch, targetBranch);
+    }
 }

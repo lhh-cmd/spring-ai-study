@@ -17,13 +17,14 @@ public enum OperationAction {
     MERGE_CONFLICT("合并冲突"),
     RESOLVE_CONFLICT("解决冲突并重新合并"),
     NEXT_ENV("进入下一环境"),
+    ENTER_RELEASE("进入正式环境"),
     EXIT_INTEGRATION("退出集成"),
+    CR_SUBMIT("发起CR"),
     CR_PASS("CR通过"),
     CR_REJECT("CR驳回"),
     REJECT_MERGE("驳回合并"),
-    PUBLISH("发布到线上"),
     MERGE_MASTER("合并master"),
-    RESET_ENV("环境重置");
+    REBUILD_ENV("环境重建");
 
     private final String description;
 

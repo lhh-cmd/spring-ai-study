@@ -3,28 +3,26 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>代码版本管理系统 - CVM</title>
+    <title>海兴GitFlow</title>
     <link rel="stylesheet" href="/css/cvm.css">
 </head>
 <body>
 <div class="cvm-container">
     <!-- 顶部导航 -->
     <nav class="top-nav">
-        <span class="brand">🔀 代码版本管理系统</span>
+        <span class="brand">海兴GitFlow</span>
         <span class="nav-right">
-            <a href="/cvm-log.html">📋 操作日志</a>
+            <a href="/cvm-log.html">操作日志</a>
             <a href="/index.html">摸鱼了么</a>
             <span id="top-user"></span>
             <button id="btn-logout" class="btn-link" onclick="logout()" style="display:none">退出</button>
         </span>
     </nav>
 
-    <div id="msg-box" class="msg"></div>
-
     <!-- 登录 / 注册 -->
     <div id="auth-section">
         <div class="auth-card">
-            <h2>🔀 代码版本管理系统</h2>
+            <h2>海兴GitFlow</h2>
             <div class="tabs">
                 <button class="tab-btn active" onclick="switchAuthTab('login', this)">登录</button>
                 <button class="tab-btn" onclick="switchAuthTab('register', this)">注册</button>
@@ -52,9 +50,10 @@
         <div class="cvm-layout">
             <!-- 左侧导航 -->
             <aside class="side-nav">
-                <button class="side-nav-item active" id="nav-project" onclick="switchSideNav('project')">📦 项目管理</button>
-                <button class="side-nav-item" id="nav-requirement" onclick="switchSideNav('requirement')">📋 需求管理</button>
-                <button class="side-nav-item" id="nav-environment" onclick="switchSideNav('environment')">🌐 环境管理</button>
+                <button class="side-nav-item active" id="nav-project" onclick="switchSideNav('project')">项目管理</button>
+                <button class="side-nav-item" id="nav-requirement" onclick="switchSideNav('requirement')">需求管理</button>
+                <button class="side-nav-item" id="nav-cr" onclick="switchSideNav('cr')">CR管理</button>
+                <button class="side-nav-item" id="nav-environment" onclick="switchSideNav('environment')">环境管理</button>
             </aside>
 
             <!-- 右侧内容区 -->
@@ -64,17 +63,7 @@
                     <section class="panel">
                         <div class="panel-header">
                             <h3>项目列表</h3>
-                            <button class="btn btn-primary" onclick="toggleCreateProject()">+ 注册项目</button>
-                        </div>
-                        <div id="create-project-form" class="form-row-wrap" style="display:none">
-                            <input type="text" id="cp-code" placeholder="项目ID（编号）" required>
-                            <input type="text" id="cp-name" placeholder="项目名称" required>
-                            <input type="text" id="cp-desc" placeholder="项目描述">
-                            <input type="text" id="cp-git-url" placeholder="Git地址（可空）">
-                            <input type="text" id="cp-git-user" placeholder="Git账号（可空）">
-                            <input type="password" id="cp-git-token" placeholder="Git令牌（可空）">
-                            <button class="btn btn-primary" onclick="createProject()">确认注册</button>
-                            <button class="btn" onclick="toggleCreateProject(false)">取消</button>
+                            <button class="btn btn-primary" onclick="openCreateProject()">+ 注册项目</button>
                         </div>
                         <div id="project-list"></div>
                     </section>
@@ -93,12 +82,34 @@
                     </section>
                 </div>
 
+                <!-- CR管理视图 -->
+                <div id="view-cr" class="side-view" style="display:none">
+                    <section class="panel">
+                        <div class="panel-header"><h3>需要我审核的 CR</h3></div>
+                        <table class="data-table">
+                            <thead>
+                            <tr><th>分支</th><th>需求</th><th>环境</th><th>发起人</th><th>说明</th><th>发起时间</th><th>操作</th></tr>
+                            </thead>
+                            <tbody id="cr-pending-list"></tbody>
+                        </table>
+                    </section>
+                    <section class="panel">
+                        <div class="panel-header"><h3>我提交的 CR</h3></div>
+                        <table class="data-table">
+                            <thead>
+                            <tr><th>分支</th><th>需求</th><th>环境</th><th>审核人</th><th>状态</th><th>说明</th><th>发起时间</th></tr>
+                            </thead>
+                            <tbody id="cr-submitted-list"></tbody>
+                        </table>
+                    </section>
+                </div>
+
                 <!-- 环境管理视图 -->
                 <div id="view-environment" class="side-view" style="display:none">
                     <section class="panel">
                         <div class="panel-header">
                             <h3 id="env-project-title">环境管理</h3>
-                            <button class="btn" onclick="backToProjectList()">← 返回项目列表</button>
+                            <button class="btn" onclick="backToProjectList()">返回项目列表</button>
                         </div>
                         <div class="env-tabs" id="env-tabs"></div>
                         <div id="env-content"></div>
@@ -112,16 +123,138 @@
     <div id="req-modal" class="modal-mask" style="display:none">
         <div class="modal">
             <h3>创建需求</h3>
-            <div class="form-row-wrap">
-                <input type="text" id="req-name" placeholder="需求名称" required>
-                <input type="text" id="req-url" placeholder="需求地址">
-                <input type="text" id="req-branch" placeholder="分支名称" required>
-                <select id="req-source">
-                    <option value="NEW">新建分支</option>
-                    <option value="REMOTE">从远程已有拉取</option>
-                </select>
-                <button class="btn btn-primary" onclick="createRequirement()">创建</button>
+            <div class="form-stack">
+                <div class="form-row">
+                    <label class="form-label">创建类型</label>
+                    <select id="req-source">
+                        <option value="NEW">新建分支</option>
+                        <option value="REMOTE">从远程已有拉取</option>
+                    </select>
+                </div>
+                <div class="form-row">
+                    <label class="form-label">需求名称</label>
+                    <input type="text" id="req-name" placeholder="请输入需求名称" required>
+                </div>
+                <div class="form-row">
+                    <label class="form-label">需求地址</label>
+                    <input type="text" id="req-url" placeholder="可空">
+                </div>
+                <div class="form-row">
+                    <label class="form-label">分支名称</label>
+                    <input type="text" id="req-branch" placeholder="请输入分支名称" required>
+                </div>
+            </div>
+            <div class="modal-actions">
                 <button class="btn" onclick="closeReqModal()">取消</button>
+                <button class="btn btn-primary" onclick="createRequirement()">创建</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 发起CR弹窗 -->
+    <div id="cr-modal" class="modal-mask" style="display:none">
+        <div class="modal">
+            <h3>发起 CR</h3>
+            <div class="cr-modal-info" id="cr-modal-info"></div>
+            <div class="form-stack">
+                <div class="form-row">
+                    <label class="form-label">审核人</label>
+                    <select id="cr-reviewer" required></select>
+                </div>
+                <div class="form-row form-row-top">
+                    <label class="form-label">CR说明</label>
+                    <textarea id="cr-comment-input" rows="3" placeholder="可空"></textarea>
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button class="btn" onclick="closeCrModal()">取消</button>
+                <button class="btn btn-primary" onclick="submitCr()">提交</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 注册项目弹窗 -->
+    <div id="project-modal" class="modal-mask" style="display:none">
+        <div class="modal">
+            <h3>注册项目</h3>
+            <div class="form-stack">
+                <div class="form-row">
+                    <label class="form-label">项目ID</label>
+                    <input type="text" id="cp-code" placeholder="请输入项目编号" required>
+                </div>
+                <div class="form-row">
+                    <label class="form-label">项目名称</label>
+                    <input type="text" id="cp-name" placeholder="请输入项目名称" required>
+                </div>
+                <div class="form-row">
+                    <label class="form-label">项目描述</label>
+                    <input type="text" id="cp-desc" placeholder="可空">
+                </div>
+                <div class="form-row">
+                    <label class="form-label">Git地址 <span class="required">*</span></label>
+                    <input type="text" id="cp-git-url" placeholder="如 https://github.com/xxx/repo.git" required>
+                </div>
+                <div class="form-hint">系统使用统一服务账号操作该仓库，无需填写 Git 账号/令牌</div>
+            </div>
+            <div class="modal-actions">
+                <button class="btn" onclick="closeProjectModal()">取消</button>
+                <button class="btn btn-primary" onclick="createProject()">确认注册</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 提示弹窗 -->
+    <div id="msg-modal" class="modal-mask" style="display:none">
+        <div class="modal modal-feedback">
+            <div class="feedback-icon" id="msg-modal-icon">✓</div>
+            <div id="msg-modal-text" class="feedback-text"></div>
+            <div class="modal-actions feedback-actions">
+                <button class="btn btn-primary" onclick="closeMsgModal()">知道了</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 确认弹窗 -->
+    <div id="confirm-modal" class="modal-mask" style="display:none">
+        <div class="modal modal-feedback">
+            <div class="feedback-title">确认操作</div>
+            <div id="confirm-modal-text" class="feedback-text"></div>
+            <div class="modal-actions feedback-actions">
+                <button class="btn" onclick="confirmResult(false)">取消</button>
+                <button class="btn btn-primary" onclick="confirmResult(true)">确认</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 意见输入弹窗 -->
+    <div id="prompt-modal" class="modal-mask" style="display:none">
+        <div class="modal modal-feedback">
+            <div class="feedback-title" id="prompt-modal-title">请输入</div>
+            <textarea id="prompt-modal-input" class="feedback-input" rows="3" placeholder="请输入"></textarea>
+            <div class="modal-actions feedback-actions">
+                <button class="btn" onclick="promptResult(null)">取消</button>
+                <button class="btn btn-primary" onclick="promptResult('ok')">确定</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 解决冲突弹窗 -->
+    <div id="conflict-modal" class="modal-mask" style="display:none">
+        <div class="modal">
+            <h3>解决冲突</h3>
+            <div id="conflict-modal-error" class="msg msg-error" style="display:none"></div>
+            <div id="conflict-modal-info" class="cr-modal-info"></div>
+            <div class="sub-section">
+                <h4>冲突文件</h4>
+                <div id="conflict-modal-files" class="conflict-files"></div>
+            </div>
+            <div class="sub-section">
+                <h4>解决冲突步骤</h4>
+                <div class="resolve-steps" id="conflict-modal-steps"></div>
+            </div>
+            <div class="modal-actions">
+                <button class="btn" onclick="closeConflictModal()">取消</button>
+                <button class="btn btn-success" onclick="confirmConflictResolved()">冲突已解决</button>
             </div>
         </div>
     </div>

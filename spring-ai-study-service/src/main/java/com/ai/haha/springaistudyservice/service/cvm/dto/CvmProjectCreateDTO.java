@@ -24,17 +24,7 @@ public class CvmProjectCreateDTO {
     private String projectDesc;
 
     /**
-     * 公司项目Git地址（可空）
+     * 公司项目Git地址（必填）
      */
     private String gitUrl;
-
-    /**
-     * Git账号（可空）
-     */
-    private String gitUsername;
-
-    /**
-     * Git令牌/密码（可空）
-     */
-    private String gitToken;
 }

@@ -5,6 +5,7 @@ package com.ai.haha.springaistudyservice.service.cvm.enums;
  */
 public enum CrStatus {
 
+    PENDING("PENDING", "待审核"),
     PASS("PASS", "通过"),
     REJECT("REJECT", "驳回");
 

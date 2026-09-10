@@ -106,31 +106,42 @@ public class CvmRequirementServiceImpl implements CvmRequirementService {
         requirement.setUpdateTime(LocalDateTime.now());
         requirementMapper.insert(requirement);
 
-        // 生成 dev 环境待合并记录
-        CvmMergeRecord record = new CvmMergeRecord();
-        record.setMergeId(idGenerator.nextId());
-        record.setProjectId(project.getProjectId());
-        record.setRequirementId(requirement.getRequirementId());
-        record.setRequirementName(requirement.getRequirementName());
-        record.setBranchName(requirement.getBranchName());
-        record.setUserId(dto.getCreatorUserId());
-        record.setTargetEnv(EnvCode.DEV.getCode());
-        record.setTargetBranch(devBranch);
-        record.setStatus(MergeStatus.PENDING.getCode());
-        record.setCrRequired(false);
-        record.setCreateTime(LocalDateTime.now());
-        record.setUpdateTime(LocalDateTime.now());
-        mergeRecordMapper.insert(record);
+        // 生成 开发/测试/预发 三个环境的待合并记录（每个环境的待集成列表均展示项目全部分支）
+        CvmMergeRecord devRecord = null;
+        for (EnvCode envCode : EnvCode.values()) {
+            if (envCode == EnvCode.RELEASE) {
+                continue; // 正式环境记录仅在进入正式环境时创建
+            }
+            CvmMergeRecord record = new CvmMergeRecord();
+            record.setMergeId(idGenerator.nextId());
+            record.setProjectId(project.getProjectId());
+            record.setRequirementId(requirement.getRequirementId());
+            record.setRequirementName(requirement.getRequirementName());
+            record.setBranchName(requirement.getBranchName());
+            record.setUserId(dto.getCreatorUserId());
+            record.setTargetEnv(envCode.getCode());
+            record.setTargetBranch(envCode.getBranchName());
+            record.setStatus(MergeStatus.PENDING.getCode());
+            record.setCrRequired(envCode == EnvCode.PREVIEW); // 预发环境需CR审核才能进入正式环境
+            record.setCreateTime(LocalDateTime.now());
+            record.setUpdateTime(LocalDateTime.now());
+            mergeRecordMapper.insert(record);
+            if (envCode == EnvCode.DEV) {
+                devRecord = record;
+            }
+        }
 
-        operationLogService.record(project.getProjectId(), requirement.getRequirementId(), record.getMergeId(),
+        operationLogService.record(project.getProjectId(), requirement.getRequirementId(),
+                devRecord != null ? devRecord.getMergeId() : null,
                 dto.getCreatorUserId(),
                 source == BranchSource.NEW ? OperationAction.CREATE_BRANCH : OperationAction.PULL_BRANCH,
                 (source == BranchSource.NEW ? "新建" : "拉取") + "分支 " + requirement.getBranchName());
-        operationLogService.record(project.getProjectId(), requirement.getRequirementId(), record.getMergeId(),
+        operationLogService.record(project.getProjectId(), requirement.getRequirementId(),
+                devRecord != null ? devRecord.getMergeId() : null,
                 dto.getCreatorUserId(),
                 OperationAction.CREATE_REQUIREMENT,
                 "创建需求：" + requirement.getRequirementName() + "（分支 " + requirement.getBranchName()
-                        + "，已进入开发环境待合并列表）");
+                        + "，已进入 开发/测试/预发 三个环境待集成列表）");
         return requirement;
     }
 

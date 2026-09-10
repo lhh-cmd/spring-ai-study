@@ -48,6 +48,12 @@ public class CvmProjectServiceImpl implements CvmProjectService {
         if (!StringUtils.hasText(dto.getProjectName())) {
             throw new RuntimeException("项目名称不能为空");
         }
+        if (!StringUtils.hasText(dto.getGitUrl())) {
+            throw new RuntimeException("Git 地址必填：注册项目需提供仓库地址，系统统一使用服务账号操作该仓库");
+        }
+        if (!dto.getGitUrl().matches("(?i)https?://.+")) {
+            throw new RuntimeException("Git 地址格式不正确：需为 http(s):// 开头的仓库地址");
+        }
         if (projectMapper.existsByProjectCode(dto.getProjectCode())) {
             throw new RuntimeException("项目编号已存在：" + dto.getProjectCode());
         }
@@ -57,8 +63,6 @@ public class CvmProjectServiceImpl implements CvmProjectService {
         project.setProjectName(dto.getProjectName());
         project.setProjectDesc(dto.getProjectDesc());
         project.setGitUrl(dto.getGitUrl());
-        project.setGitUsername(dto.getGitUsername());
-        project.setGitToken(dto.getGitToken());
         project.setCreatorUserId(creatorUserId);
         project.setCreateTime(LocalDateTime.now());
         project.setUpdateTime(LocalDateTime.now());

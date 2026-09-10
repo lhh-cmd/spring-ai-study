@@ -27,19 +27,19 @@ public interface CvmMergeService {
     void exitIntegration(Long mergeId, Long operatorUserId);
 
     /**
-     * 当前环境验证完成后，将分支放入下一环境待合并列表
+     * 进入正式环境：将预发环境已集成的全部分支（均需通过CR）合入 release 分支，加入正式环境合并列表
+     *
+     * @return 本次进入正式环境的分支数量
      */
-    void nextEnv(Long requirementId, Long operatorUserId);
+    int enterRelease(Long projectId, Long operatorUserId);
 
     /**
-     * 发布到线上（正式环境）
+     * 合并 master：将正式环境上线分支合入 master，逻辑删除上线分支与需求，
+     * 并重建 dev/test/preview/release 环境分支（对齐 master 后重新合并仍存续的已集成分支）
+     *
+     * @return 本次上线分支数量
      */
-    void publish(Long requirementId, Long operatorUserId);
-
-    /**
-     * 合并master：分支合入master，其他环境退出已合并分支、基于master更新dev、已合并分支重新合并
-     */
-    void mergeToMaster(Long requirementId, Long operatorUserId);
+    int mergeMaster(Long projectId, Long operatorUserId);
 
     /**
      * 查询项目下某环境的所有合并记录（待合并/冲突/已合并）

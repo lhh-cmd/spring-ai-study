@@ -87,7 +87,8 @@ public class SimulatedGitService implements GitOperationService {
             }
             return GitMergeResult.conflict(otherBranches,
                     "（模拟）检测到冲突：" + targetBranch + " 分支在您的分支 " + sourceBranch + " 创建之后，已被其他分支合并过，"
-                            + "目标分支代码已前进，需要先解决冲突再合并。请按页面下方的解决步骤处理后，点击【解决冲突并合并】。");
+                            + "目标分支代码已前进。请将本分支合并到 " + targetBranch + " 上解决冲突（详见【解决冲突】弹窗中的步骤），"
+                            + "解决并推送后点击【冲突已解决】按钮完成合并。");
         }
 
         String commitId = "sim-" + RandomUtil.randomString(40);
@@ -105,6 +106,18 @@ public class SimulatedGitService implements GitOperationService {
             branchMapper.updateById(src);
         }
         return mergeBranch(project, sourceBranch, targetBranch);
+    }
+
+    @Override
+    public GitMergeResult mergeNoConflict(CvmProject project, String sourceBranch, String targetBranch) {
+        // 强制合并：登记分支并直接返回成功，不做冲突启发式判定（用于进入正式环境与重建环境分支）
+        CvmBranch src = branchMapper.selectByProjectIdAndBranchName(project.getProjectId(), sourceBranch);
+        if (src == null) {
+            registerBranch(project, sourceBranch, targetBranch, BranchSource.NEW);
+        }
+        String commitId = "sim-" + RandomUtil.randomString(40);
+        log.info("模拟强制合并成功：{} -> {}, commit={}", sourceBranch, targetBranch, commitId);
+        return GitMergeResult.ok(commitId, "模拟合并成功");
     }
 
     @Override

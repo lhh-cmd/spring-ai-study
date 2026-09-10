@@ -1,4 +1,4 @@
-// ============ 代码版本管理系统 CVM 前端逻辑 ============
+// ============ 海兴GitFlow 前端逻辑 ============
 
 const API_BASE = '/api/cvm';
 
@@ -18,11 +18,10 @@ const ENV_LIST = [
 ];
 
 const REQUIREMENT_STATUS = {
-    DEVELOPING: '开发中/待合并',
+    DEVELOPING: '开发中',
     CONFLICT: '冲突待解决',
     MERGED: '已合并',
-    PUBLISHED: '已发布',
-    MERGED_MASTER: '已合master'
+    RELEASED: '已上线'
 };
 
 const MERGE_STATUS = {
@@ -36,6 +35,7 @@ let currentUser = null;
 let currentProject = null; // 项目详情（含 project/environments/requirements）
 let currentEnvTab = 'DEV';
 let createReqProjectId = null; // 弹窗创建需求时所属项目ID
+let envRecords = []; // 当前环境合并记录缓存（供解决冲突弹窗查找记录）
 
 // ============ 工具函数 ============
 
@@ -55,12 +55,62 @@ function qs(params) {
 }
 
 function showMsg(text, type) {
-    const box = $('msg-box');
-    box.className = 'msg ' + (type === 'error' ? 'msg-error' : 'msg-success');
-    box.textContent = text;
-    box.style.display = 'block';
-    setTimeout(function () { box.style.display = 'none'; }, 6000);
+    const icon = $('msg-modal-icon');
+    const isError = type === 'error';
+    icon.className = 'feedback-icon ' + (isError ? 'feedback-icon-error' : 'feedback-icon-success');
+    icon.textContent = isError ? '✕' : '✓';
+    $('msg-modal-text').textContent = text;
+    $('msg-modal').style.display = 'flex';
 }
+
+function closeMsgModal() {
+    $('msg-modal').style.display = 'none';
+}
+
+// 确认弹窗（替代原生 confirm）
+let confirmCallback = null;
+
+function confirmDialog(message) {
+    $('confirm-modal-text').textContent = message;
+    $('confirm-modal').style.display = 'flex';
+    return new Promise(function (resolve) { confirmCallback = resolve; });
+}
+
+function confirmResult(val) {
+    $('confirm-modal').style.display = 'none';
+    const cb = confirmCallback;
+    confirmCallback = null;
+    if (cb) cb(val);
+}
+
+// 意见输入弹窗（替代原生 prompt）
+let promptCallback = null;
+
+function promptDialog(title) {
+    $('prompt-modal-title').textContent = title || '请输入';
+    $('prompt-modal-input').value = '';
+    $('prompt-modal').style.display = 'flex';
+    $('prompt-modal-input').focus();
+    return new Promise(function (resolve) { promptCallback = resolve; });
+}
+
+function promptResult(val) {
+    $('prompt-modal').style.display = 'none';
+    const cb = promptCallback;
+    promptCallback = null;
+    if (cb) cb(val === 'ok' ? $('prompt-modal-input').value.trim() : null);
+}
+
+document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape') return;
+    if ($('confirm-modal').style.display === 'flex') confirmResult(false);
+    else if ($('prompt-modal').style.display === 'flex') promptResult(null);
+    else if ($('msg-modal').style.display === 'flex') closeMsgModal();
+    else if ($('conflict-modal').style.display === 'flex') closeConflictModal();
+    else if ($('project-modal').style.display === 'flex') closeProjectModal();
+    else if ($('req-modal').style.display === 'flex') closeReqModal();
+    else if ($('cr-modal').style.display === 'flex') closeCrModal();
+});
 
 async function api(path, options) {
     options = options || {};
@@ -168,9 +218,14 @@ function logout() {
 
 // ============ 项目 ============
 
-function toggleCreateProject(show) {
-    const form = $('create-project-form');
-    form.style.display = show === undefined ? (form.style.display === 'none' ? 'flex' : 'none') : (show ? 'flex' : 'none');
+function openCreateProject() {
+    ['cp-code', 'cp-name', 'cp-desc', 'cp-git-url'].forEach(function (id) { $(id).value = ''; });
+    $('project-modal').style.display = 'flex';
+    $('cp-code').focus();
+}
+
+function closeProjectModal() {
+    $('project-modal').style.display = 'none';
 }
 
 async function loadProjects() {
@@ -203,7 +258,10 @@ async function loadProjects() {
 async function createProject() {
     const code = $('cp-code').value.trim();
     const name = $('cp-name').value.trim();
+    const gitUrl = $('cp-git-url').value.trim();
     if (!code || !name) { showMsg('请填写项目ID（编号）和项目名称', 'error'); return; }
+    if (!gitUrl) { showMsg('请填写 Git 地址', 'error'); return; }
+    if (!/^https?:\/\/.+/.test(gitUrl)) { showMsg('Git 地址需以 http(s):// 开头', 'error'); return; }
     try {
         await api('/project/create?creatorUserId=' + currentUser.userId, {
             method: 'POST',
@@ -211,14 +269,12 @@ async function createProject() {
                 projectCode: code,
                 projectName: name,
                 projectDesc: $('cp-desc').value.trim(),
-                gitUrl: $('cp-git-url').value.trim(),
-                gitUsername: $('cp-git-user').value.trim(),
-                gitToken: $('cp-git-token').value.trim()
+                gitUrl: gitUrl
             })
         });
         showMsg('项目注册成功，已初始化 4 个环境', 'success');
-        toggleCreateProject(false);
-        ['cp-code', 'cp-name', 'cp-desc', 'cp-git-url', 'cp-git-user', 'cp-git-token'].forEach(function (id) { $(id).value = ''; });
+        closeProjectModal();
+        ['cp-code', 'cp-name', 'cp-desc', 'cp-git-url'].forEach(function (id) { $(id).value = ''; });
         loadProjects();
     } catch (e) {
         showMsg('注册失败：' + e.message, 'error');
@@ -228,7 +284,7 @@ async function createProject() {
 // ============ 侧边导航 ============
 
 function switchSideNav(view) {
-    ['project', 'requirement', 'environment'].forEach(function (v) {
+    ['project', 'requirement', 'cr', 'environment'].forEach(function (v) {
         $('view-' + v).style.display = v === view ? 'block' : 'none';
         $('nav-' + v).classList.toggle('active', v === view);
     });
@@ -236,6 +292,8 @@ function switchSideNav(view) {
         loadProjects();
     } else if (view === 'requirement') {
         loadMyRequirements();
+    } else if (view === 'cr') {
+        loadCrManagement();
     } else if (view === 'environment') {
         if (!currentProject) {
             showMsg('请先在「项目管理」中点击项目旁的【进入环境】', 'error');
@@ -253,7 +311,7 @@ async function enterEnvironment(projectId) {
         currentProject = detail;
         currentEnvTab = 'DEV';
         const p = detail.project;
-        $('env-project-title').textContent = '🌐 环境管理：' + p.projectName + '（' + p.projectCode + '）'
+        $('env-project-title').textContent = '环境管理：' + p.projectName + '（' + p.projectCode + '）'
             + (p.gitUrl ? '' : '　（当前为模拟模式）');
         switchSideNav('environment');
     } catch (e) {
@@ -316,7 +374,7 @@ async function createRequirement() {
                 creatorUserId: currentUser.userId
             })
         });
-        showMsg('需求创建成功，分支已进入开发环境待合并列表', 'success');
+        showMsg('需求创建成功，分支已进入 开发/测试/预发 三个环境待集成列表', 'success');
         closeReqModal();
         loadMyRequirements();
     } catch (e) {
@@ -368,54 +426,27 @@ async function renderEnv(envCode) {
 }
 
 function renderEnvContent(envCode, records) {
-    const cfg = ENV_CONFIG[envCode];
-    const pending = (records || []).filter(function (r) { return r.status !== 'MERGED'; });
-    const merged = (records || []).filter(function (r) { return r.status === 'MERGED'; });
+    envRecords = records || [];
+    // 冲突分支保留在已集成列表，仅待合并/已驳回的分支进入待集成列表
+    const merged = envRecords.filter(function (r) { return r.status === 'MERGED' || r.status === 'CONFLICT'; });
+    const pending = envRecords.filter(function (r) { return r.status !== 'MERGED' && r.status !== 'CONFLICT'; });
+    const isPreview = envCode === 'PREVIEW';
+    const isRelease = envCode === 'RELEASE';
     const box = $('env-content');
 
-    let html = '<div class="sub-section">' +
-        '<h4>🕐 ' + cfg.name + ' 待集成列表（集成到公共分支 ' + cfg.branch + '）' +
-        (envCode === 'DEV' ? '　<span class="text-muted">即用户新建的开发分支</span>' : '') +
-        (envCode === 'RELEASE' ? '　<span class="text-muted">正式环境集成前需完成 CR 审核</span>' : '') +
-        '</h4>';
-
-    if (!pending.length) {
-        html += '<div class="text-muted">当前没有待合并的分支</div>';
-    } else {
-        html += '<table class="data-table"><thead><tr>' +
-            '<th>分支</th><th>需求</th><th>开发人</th><th>状态</th><th>CR</th><th>操作</th>' +
-            '</tr></thead><tbody>';
-        pending.forEach(function (r) {
-            html += '<tr>' +
-                '<td><code>' + esc(r.branchName) + '</code></td>' +
-                '<td>' + esc(r.requirementName) + '</td>' +
-                '<td>' + esc(r.userName) + '</td>' +
-                '<td>' + statusBadge(r.status, r.statusDesc) + '</td>' +
-                '<td>' + crBadge(r) + '</td>' +
-                '<td>' + pendingActions(envCode, r) + '</td>' +
-                '</tr>';
-            if (r.status === 'CONFLICT') {
-                html += '<tr><td colspan="6" class="mt-8">' + conflictBlock(r) + '</td></tr>';
-            }
-        });
-        html += '</tbody></table>';
-    }
-    html += '</div>';
-
-    html += '<div class="sub-section"><h4>✅ ' + cfg.name + ' 已集成列表（分支 + 集成人 + 时间）</h4>';
+    // 已集成列表（置顶）
+    let html = '<div class="env-list-card">' +
+        '<div class="env-list-head"><span class="dot dot-merged"></span>已集成列表</div>';
     if (!merged.length) {
         html += '<div class="text-muted">暂无已合并的分支</div>';
     } else {
         html += '<table class="data-table"><thead><tr>' +
-            '<th>分支</th><th>需求</th><th>集成人</th><th>Commit</th><th>集成时间</th><th>操作</th>' +
+            '<th>分支名称</th><th>需求名称</th><th>操作</th>' +
             '</tr></thead><tbody>';
         merged.forEach(function (r) {
             html += '<tr>' +
                 '<td><code>' + esc(r.branchName) + '</code></td>' +
                 '<td>' + esc(r.requirementName) + '</td>' +
-                '<td>' + esc(r.userName) + '</td>' +
-                '<td><code>' + esc(shortCommit(r.mergeCommit)) + '</code></td>' +
-                '<td>' + fmtTime(r.mergeTime) + '</td>' +
                 '<td>' + mergedActions(envCode, r) + '</td>' +
                 '</tr>';
         });
@@ -423,77 +454,131 @@ function renderEnvContent(envCode, records) {
     }
     html += '</div>';
 
+    // 环境级操作区（预发：进入正式环境；正式：合并 master），带 ? 说明提示
+    if (isPreview || isRelease) {
+        const tipText = isPreview
+            ? '将预发环境已通过 CR 的全部已集成分支合入 release 正式分支；预发环境的合并列表保持不变。'
+            : '将 release 上已上线的分支合并到 master，逻辑删除这些分支与需求，并重建 dev/test/preview/release 环境分支。';
+        html += '<div class="env-action-bar">' +
+            '<span class="tip-wrap">?<span class="tip-text">' + esc(tipText) + '</span></span>';
+        if (isPreview) {
+            html += '<button class="btn btn-success" onclick="enterRelease()">进入正式环境</button>';
+        } else {
+            html += '<button class="btn btn-warning" onclick="mergeMaster()">合并 master</button>';
+        }
+        html += '</div>';
+    }
+
+    // 待集成列表（底部；正式环境没有待集成列表）
+    if (!isRelease) {
+        html += '<div class="env-list-card env-list-pending">' +
+            '<div class="env-list-head"><span class="dot dot-pending"></span>待集成列表</div>';
+        if (!pending.length) {
+            html += '<div class="text-muted">当前没有待集成的分支</div>';
+        } else {
+            html += '<table class="data-table"><thead><tr>' +
+                '<th>分支名称</th><th>需求名称</th><th>操作</th>' +
+                '</tr></thead><tbody>';
+            pending.forEach(function (r) {
+                html += '<tr>' +
+                    '<td><code>' + esc(r.branchName) + '</code></td>' +
+                    '<td>' + esc(r.requirementName) + '</td>' +
+                    '<td>' + pendingActions(envCode, r) + '</td>' +
+                    '</tr>';
+            });
+            html += '</tbody></table>';
+        }
+        html += '</div>';
+    }
+
     box.innerHTML = html;
 }
 
+// 分支的 CR 操作/状态展示（发起cr / 已cr / 重新发起cr）
+function crActionHtml(r) {
+    const id = r.mergeId;
+    if (r.crStatus === 'PASS') {
+        return '<span class="badge-status st-merged">cr完成</span>';
+    }
+    if (r.crStatus === 'PENDING') {
+        return '<span class="badge-status st-pending">cr待审核</span>';
+    }
+    if (r.crStatus === 'REJECT') {
+        return '<button class="btn btn-warning btn-sm" onclick="openCrModal(\'' + id + '\')">重新发起cr</button>';
+    }
+    return '<button class="btn btn-sm" onclick="openCrModal(\'' + id + '\')">发起cr</button>';
+}
+
 function pendingActions(envCode, r) {
-    const verb = '集成到 ' + ENV_CONFIG[envCode].branch;
-    if (r.status === 'CONFLICT') {
-        return '<button class="btn btn-warning btn-sm" onclick="resolveConflict(\'' + r.mergeId + '\')">解决冲突并集成</button>';
+    if (requirementStatus(r.requirementId) === 'RELEASED') {
+        return '<span class="badge-status st-released">已上线</span>';
     }
+    const cr = crActionHtml(r);
     if (r.status === 'REJECTED') {
-        return '<span class="text-muted">CR 已驳回，可通过 CR 后重新集成</span>';
+        return cr;
     }
-    // PENDING
-    if (envCode === 'RELEASE') {
-        if (r.crStatus === 'PASS') {
-            return '<button class="btn btn-primary btn-sm" onclick="doMerge(\'' + r.mergeId + '\')">' + verb + '</button>';
-        }
-        return '<span class="text-muted">待CR审核</span> ' +
-            '<input type="text" id="cr-comment-' + r.mergeId + '" placeholder="审核意见（可空）" style="width:180px"> ' +
-            '<button class="btn btn-success btn-sm" onclick="crAudit(\'' + r.mergeId + '\',\'PASS\')">CR通过</button> ' +
-            '<button class="btn btn-danger btn-sm" onclick="crAudit(\'' + r.mergeId + '\',\'REJECT\')">CR驳回</button>';
-    }
-    return '<button class="btn btn-primary btn-sm" onclick="doMerge(\'' + r.mergeId + '\')">' + verb + '</button>';
+    const verb = '集成到 ' + ENV_CONFIG[envCode].branch;
+    return cr + ' <button class="btn btn-primary btn-sm" onclick="doMerge(\'' + r.mergeId + '\')">' + verb + '</button>';
 }
 
 function mergedActions(envCode, r) {
     const reqStatus = requirementStatus(r.requirementId);
-    const reqEnv = requirementCurrentEnv(r.requirementId);
-    const movedOn = reqEnv && reqEnv !== envCode;
-    if (movedOn) {
-        return '<span class="text-muted">已进入' + envName(reqEnv) + '</span>';
+    if (reqStatus === 'RELEASED') {
+        return '<span class="badge-status st-released">已上线</span>';
     }
-    const exitBtn = '<button class="btn btn-danger btn-sm" onclick="exitIntegration(\'' + r.mergeId + '\')">退出集成</button> ';
-    if (envCode !== 'RELEASE') {
-        if (reqStatus === 'MERGED_MASTER' || reqStatus === 'PUBLISHED') {
-            return '<span class="text-muted">' + statusText(reqStatus) + '</span>';
-        }
-        return exitBtn + '<button class="btn btn-success btn-sm" onclick="nextEnv(\'' + r.requirementId + '\')">验证完成，进入下一环境</button>';
+    // 冲突分支：展示「冲突」提示 + 解决冲突按钮 + 退出集成按钮
+    if (r.status === 'CONFLICT') {
+        return '<span class="badge-status st-conflict">冲突</span> ' +
+            '<button class="btn btn-warning btn-sm" onclick="openConflictModal(\'' + r.mergeId + '\')">解决冲突</button> ' +
+            '<button class="btn btn-danger btn-sm" onclick="exitIntegration(\'' + r.mergeId + '\')">退出集成</button>';
     }
-    // RELEASE
-    if (reqStatus === 'MERGED') {
-        return exitBtn + '<button class="btn btn-success btn-sm" onclick="publish(\'' + r.requirementId + '\')">发布到线上</button>';
-    }
-    if (reqStatus === 'PUBLISHED') {
-        return '<button class="btn btn-warning btn-sm" onclick="mergeMaster(\'' + r.requirementId + '\')">合并 master</button> <span class="text-muted">已发布</span>';
-    }
-    if (reqStatus === 'MERGED_MASTER') {
-        return '<span class="badge badge-status st-master">已合 master</span>';
-    }
-    return '<span class="text-muted">' + statusText(reqStatus) + '</span>';
+    return crActionHtml(r) + ' <button class="btn btn-danger btn-sm" onclick="exitIntegration(\'' + r.mergeId + '\')">退出集成</button>';
 }
 
-function conflictBlock(r) {
-    const files = (r.conflictFiles || []).map(function (f) { return '<li>' + esc(f) + '</li>'; }).join('');
-    return '<div class="msg msg-error" style="display:block">⚠️ 合并冲突：' + esc(r.conflictDetail || '') + '</div>' +
-        (files ? '<div class="text-muted">冲突文件：<ul style="margin:4px 0 8px 18px">' + files + '</ul></div>' : '') +
-        '<div class="text-muted" style="margin-bottom:4px">解决冲突步骤：</div>' +
-        '<div class="resolve-steps">' + esc(r.resolveSteps || '') + '</div>';
+// ============ 解决冲突弹窗 ============
+
+let conflictModalMergeId = null;
+
+function findMergeRecord(mergeId) {
+    return envRecords.find(function (r) { return String(r.mergeId) === String(mergeId); });
 }
 
-function crBadge(r) {
-    if (r.crRequired !== true) return '<span class="text-muted">—</span>';
-    const map = { PASS: 'CR通过', REJECT: 'CR驳回', PENDING: '待审核' };
-    const label = map[r.crStatus] || r.crStatus || '待审核';
-    const cls = r.crStatus === 'PASS' ? 'st-merged' : (r.crStatus === 'REJECT' ? 'st-rejected' : 'st-pending');
-    return '<span class="badge-status ' + cls + '">' + label + '</span>';
+function openConflictModal(mergeId) {
+    const record = findMergeRecord(mergeId);
+    if (!record) return;
+    conflictModalMergeId = mergeId;
+    $('conflict-modal-error').style.display = 'none';
+    $('conflict-modal-info').textContent = '分支 ' + record.branchName + ' 合并到 ' + record.targetBranch + ' 时出现冲突：' + (record.conflictDetail || '');
+    const files = (record.conflictFiles || []).map(function (f) { return '<li>' + esc(f) + '</li>'; }).join('');
+    $('conflict-modal-files').innerHTML = files ? '<ul>' + files + '</ul>' : '<span class="text-muted">—</span>';
+    $('conflict-modal-steps').textContent = record.resolveSteps || '请在本地按提示解决冲突并推送后，点击【冲突已解决】。';
+    $('conflict-modal').style.display = 'flex';
+}
+
+function closeConflictModal() {
+    $('conflict-modal').style.display = 'none';
+    conflictModalMergeId = null;
+}
+
+async function confirmConflictResolved() {
+    if (!conflictModalMergeId) return;
+    try {
+        await api('/merge/resolve-conflict?mergeId=' + conflictModalMergeId + '&operatorUserId=' + currentUser.userId, { method: 'POST' });
+        closeConflictModal();
+        showMsg('冲突已解决并合并成功', 'success');
+        reloadEnv();
+    } catch (e) {
+        // 冲突仍存在：弹窗保留，提示用户继续解决
+        const errorBox = $('conflict-modal-error');
+        errorBox.textContent = '冲突仍存在，请继续按上述步骤解决后再次点击【冲突已解决】：' + e.message;
+        errorBox.style.display = 'block';
+    }
 }
 
 // ============ 合并 / 流程操作 ============
 
 async function doMerge(mergeId) {
-    if (!confirm('确认将分支合并到当前环境公共分支？')) return;
+    if (!(await confirmDialog('确认将分支合并到当前环境公共分支？'))) return;
     try {
         const res = await fetch(API_BASE + '/merge/merge?mergeId=' + mergeId + '&operatorUserId=' + currentUser.userId, { method: 'POST' });
         const json = await res.json();
@@ -504,19 +589,8 @@ async function doMerge(mergeId) {
     }
 }
 
-async function resolveConflict(mergeId) {
-    if (!confirm('已在本地按步骤解决冲突并推送后，点击确认重新合并？')) return;
-    try {
-        await api('/merge/resolve-conflict?mergeId=' + mergeId + '&operatorUserId=' + currentUser.userId, { method: 'POST' });
-        showMsg('冲突已解决并合并成功', 'success');
-        reloadEnv();
-    } catch (e) {
-        showMsg('解决冲突失败：' + e.message, 'error');
-    }
-}
-
 async function exitIntegration(mergeId) {
-    if (!confirm('确认将该分支从当前环境公共分支退出集成？（分支将回到待集成列表）')) return;
+    if (!(await confirmDialog('确认将该分支从当前环境公共分支退出集成？（分支将回到待集成列表）'))) return;
     try {
         await api('/merge/exit-integration?mergeId=' + mergeId + '&operatorUserId=' + currentUser.userId, { method: 'POST' });
         showMsg('已退出集成，分支回到待集成列表', 'success');
@@ -527,45 +601,142 @@ async function exitIntegration(mergeId) {
     }
 }
 
-async function nextEnv(requirementId) {
-    if (!confirm('当前环境验证完成，确认将分支放入下一环境待合并列表？')) return;
+async function enterRelease() {
+    if (!(await confirmDialog('确认将预发环境已集成的全部分支（需已完成 CR 审核）合入 release 正式分支？\n预发环境合并列表保持不变。'))) return;
     try {
-        await api('/merge/next-env?requirementId=' + requirementId + '&operatorUserId=' + currentUser.userId, { method: 'POST' });
-        showMsg('已进入下一环境待合并列表', 'success');
-        await refreshProjectDetail();
-        reloadEnv();
+        const res = await fetch(API_BASE + '/merge/enter-release?projectId=' + currentProject.project.projectId + '&operatorUserId=' + currentUser.userId, { method: 'POST' });
+        const json = await res.json();
+        showMsg(json.message, json.success ? 'success' : 'error');
+        if (json.success) {
+            await refreshProjectDetail();
+            reloadEnv();
+        }
     } catch (e) {
-        showMsg('进入下一环境失败：' + e.message, 'error');
+        showMsg('进入正式环境失败：' + e.message, 'error');
     }
 }
 
-async function publish(requirementId) {
-    if (!confirm('确认将该分支发布到线上系统？')) return;
+async function mergeMaster() {
+    if (!(await confirmDialog('确认执行合并 master？\n将 release 上已上线分支合并到 master，逻辑删除这些分支与需求，并重建 dev/test/preview/release 环境分支。'))) return;
     try {
-        await api('/merge/publish?requirementId=' + requirementId + '&operatorUserId=' + currentUser.userId, { method: 'POST' });
-        showMsg('发布成功', 'success');
-        await refreshProjectDetail();
-        reloadEnv();
-    } catch (e) {
-        showMsg('发布失败：' + e.message, 'error');
-    }
-}
-
-async function mergeMaster(requirementId) {
-    if (!confirm('确认合并 master？其他环境将退出该分支并基于 master 更新 dev。')) return;
-    try {
-        await api('/merge/merge-master?requirementId=' + requirementId + '&operatorUserId=' + currentUser.userId, { method: 'POST' });
-        showMsg('已合并 master，其他环境已基于 master 更新', 'success');
-        await refreshProjectDetail();
-        reloadEnv();
+        const res = await fetch(API_BASE + '/merge/merge-master?projectId=' + currentProject.project.projectId + '&operatorUserId=' + currentUser.userId, { method: 'POST' });
+        const json = await res.json();
+        showMsg(json.message, json.success ? 'success' : 'error');
+        if (json.success) {
+            await refreshProjectDetail();
+            reloadEnv();
+        }
     } catch (e) {
         showMsg('合并 master 失败：' + e.message, 'error');
     }
 }
 
+// ============ CR管理 ============
+
+let crModalMergeId = null;
+
+function openCrModal(mergeId) {
+    crModalMergeId = mergeId;
+    const sel = $('cr-reviewer');
+    sel.innerHTML = '<option value="">加载中…</option>';
+    $('cr-comment-input').value = '';
+    const projectId = currentProject ? currentProject.project.projectId : null;
+    $('cr-modal-info').textContent = projectId ? '提交分支的代码评审请求给指定审核人。' : '';
+    api('/cr/reviewers?projectId=' + projectId).then(function (users) {
+        const me = String(currentUser.userId);
+        const options = (users || []).filter(function (u) { return String(u.userId) !== me; })
+            .map(function (u) { return '<option value="' + u.userId + '">' + esc(u.nickname || u.username) + '（' + esc(u.username) + '）</option>'; })
+            .join('');
+        sel.innerHTML = options || '<option value="">暂无其他用户可指定</option>';
+    }).catch(function (e) {
+        sel.innerHTML = '<option value="">加载失败</option>';
+        showMsg('加载CR审核人失败：' + e.message, 'error');
+    });
+    $('cr-modal').style.display = 'flex';
+}
+
+function closeCrModal() {
+    $('cr-modal').style.display = 'none';
+    crModalMergeId = null;
+}
+
+async function submitCr() {
+    const reviewerUserId = $('cr-reviewer').value;
+    if (!crModalMergeId || !reviewerUserId) { showMsg('请选择CR审核人', 'error'); return; }
+    try {
+        await api('/cr/submit', {
+            method: 'POST',
+            body: JSON.stringify({
+                mergeId: crModalMergeId,
+                submitterUserId: currentUser.userId,
+                reviewerUserId: reviewerUserId,
+                crComment: $('cr-comment-input').value.trim()
+            })
+        });
+        showMsg('CR已提交，等待审核人审核', 'success');
+        closeCrModal();
+        reloadEnv();
+    } catch (e) {
+        showMsg('发起CR失败：' + e.message, 'error');
+    }
+}
+
+async function loadCrManagement() {
+    const pendingBody = $('cr-pending-list');
+    const submittedBody = $('cr-submitted-list');
+    pendingBody.innerHTML = '<tr><td colspan="7" class="text-muted">加载中…</td></tr>';
+    submittedBody.innerHTML = '<tr><td colspan="7" class="text-muted">加载中…</td></tr>';
+    try {
+        const pending = await api('/cr/my-pending?userId=' + currentUser.userId);
+        const submitted = await api('/cr/my-submitted?userId=' + currentUser.userId);
+        if (!pending || !pending.length) {
+            pendingBody.innerHTML = '<tr><td colspan="7" class="text-muted">暂无需要我审核的 CR</td></tr>';
+        } else {
+            pendingBody.innerHTML = pending.map(function (c) {
+                return '<tr>' +
+                    '<td><code>' + esc(c.branchName) + '</code></td>' +
+                    '<td>' + esc(c.requirementName) + '</td>' +
+                    '<td>' + envName(c.targetEnv) + '</td>' +
+                    '<td>' + esc(c.submitterName || c.submitterUserId) + '</td>' +
+                    '<td>' + esc(c.crComment || '—') + '</td>' +
+                    '<td>' + fmtTime(c.createTime) + '</td>' +
+                    '<td>' +
+                    '<button class="btn btn-success btn-sm" onclick="crAudit(\'' + c.mergeId + '\',\'PASS\')">通过</button> ' +
+                    '<button class="btn btn-danger btn-sm" onclick="crAudit(\'' + c.mergeId + '\',\'REJECT\')">驳回</button>' +
+                    '</td>' +
+                    '</tr>';
+            }).join('');
+        }
+        if (!submitted || !submitted.length) {
+            submittedBody.innerHTML = '<tr><td colspan="7" class="text-muted">暂无我提交的 CR</td></tr>';
+        } else {
+            const clsMap = { PASS: 'st-merged', REJECT: 'st-rejected', PENDING: 'st-pending' };
+            const labelMap = { PASS: 'CR通过', REJECT: 'CR驳回', PENDING: '待审核' };
+            submittedBody.innerHTML = submitted.map(function (c) {
+                return '<tr>' +
+                    '<td><code>' + esc(c.branchName) + '</code></td>' +
+                    '<td>' + esc(c.requirementName) + '</td>' +
+                    '<td>' + envName(c.targetEnv) + '</td>' +
+                    '<td>' + esc(c.reviewerName || c.reviewerUserId) + '</td>' +
+                    '<td><span class="badge-status ' + (clsMap[c.crStatus] || 'st-pending') + '">' + esc(labelMap[c.crStatus] || c.crStatus) + '</span></td>' +
+                    '<td>' + esc(c.crComment || '—') + '</td>' +
+                    '<td>' + fmtTime(c.createTime) + '</td>' +
+                    '</tr>';
+            }).join('');
+        }
+    } catch (e) {
+        pendingBody.innerHTML = '<tr><td colspan="7" class="text-muted">加载失败：' + esc(e.message) + '</td></tr>';
+        submittedBody.innerHTML = '<tr><td colspan="7" class="text-muted">加载失败：' + esc(e.message) + '</td></tr>';
+    }
+}
+
 async function crAudit(mergeId, status) {
-    const comment = ($('cr-comment-' + mergeId) ? $('cr-comment-' + mergeId).value : '');
-    if (status === 'REJECT' && !comment) { showMsg('请填写驳回意见', 'error'); return; }
+    let comment = '';
+    if (status === 'REJECT') {
+        comment = await promptDialog('请输入驳回意见：');
+        if (comment === null) { return; }
+        if (!comment.trim()) { showMsg('驳回必须填写意见', 'error'); return; }
+    }
     try {
         await api('/cr/audit', {
             method: 'POST',
@@ -573,11 +744,11 @@ async function crAudit(mergeId, status) {
                 mergeId: mergeId,
                 reviewerUserId: currentUser.userId,
                 crStatus: status,
-                crComment: comment
+                crComment: comment.trim()
             })
         });
         showMsg(status === 'PASS' ? 'CR 已通过' : 'CR 已驳回', 'success');
-        reloadEnv();
+        loadCrManagement();
     } catch (e) {
         showMsg('CR 审核失败：' + e.message, 'error');
     }
@@ -599,16 +770,6 @@ function requirementStatus(requirementId) {
     return r ? r.status : '';
 }
 
-function requirementCurrentEnv(requirementId) {
-    const list = (currentProject && currentProject.requirements) || [];
-    const r = list.find(function (x) { return String(x.requirementId) === String(requirementId); });
-    return r ? r.currentEnv : '';
-}
-
-function statusText(status) {
-    return REQUIREMENT_STATUS[status] || status || '';
-}
-
 function envName(envCode) {
     return (ENV_CONFIG[envCode] && ENV_CONFIG[envCode].name) || envCode || '';
 }
@@ -616,15 +777,10 @@ function envName(envCode) {
 function statusBadge(status, desc) {
     const map = {
         PENDING: 'st-pending', CONFLICT: 'st-conflict', MERGED: 'st-merged', REJECTED: 'st-rejected',
-        DEVELOPING: 'st-developing', PUBLISHED: 'st-published', MERGED_MASTER: 'st-master'
+        DEVELOPING: 'st-developing', RELEASED: 'st-released'
     };
     const label = desc || MERGE_STATUS[status] || REQUIREMENT_STATUS[status] || status;
     return '<span class="badge-status ' + (map[status] || 'st-pending') + '">' + esc(label) + '</span>';
-}
-
-function shortCommit(commit) {
-    if (!commit) return '—';
-    return commit.length > 12 ? commit.substring(0, 12) + '…' : commit;
 }
 
 function fmtTime(t) {

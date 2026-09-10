@@ -2,6 +2,7 @@ package com.ai.haha.springaistudyservice.service.cvm.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.TableLogic;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import lombok.Data;
@@ -46,13 +47,19 @@ public class CvmCrRecord {
     private Long mergeId;
 
     /**
-     * 评审人用户ID
+     * CR发起人用户ID
+     */
+    @JsonFormat(shape = JsonFormat.Shape.STRING)
+    private Long submitterUserId;
+
+    /**
+     * 被指定的评审人用户ID
      */
     @JsonFormat(shape = JsonFormat.Shape.STRING)
     private Long reviewerUserId;
 
     /**
-     * 审核结果（PASS/REJECT）
+     * CR状态（PENDING待审核/PASS通过/REJECT驳回）
      */
     private String crStatus;
 
@@ -75,4 +82,10 @@ public class CvmCrRecord {
      * 更新时间
      */
     private LocalDateTime updateTime;
+
+    /**
+     * 逻辑删除标记（0正常/1已删除）
+     */
+    @TableLogic
+    private Integer deleted;
 }

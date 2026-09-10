@@ -7,27 +7,37 @@
 body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    min-height: 100vh;
-    padding: 20px;
+    height: 100vh;
+    overflow: hidden;
+    padding: 0;
 }
 
 .container {
-    max-width: 1200px;
-    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    height: 100vh;
 }
 
 .section {
     background: white;
-    border-radius: 20px;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-    overflow: hidden;
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
 }
 
-/* 登录/注册区域 */
+/* 登录/注册区域：保留渐变背景，表单用白色卡片 */
+#auth-section {
+    background: transparent;
+}
+
 .auth-container {
     padding: 40px;
     max-width: 400px;
-    margin: 0 auto;
+    margin: 10vh auto;
+    background: white;
+    border-radius: 20px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
 }
 
 .logo {
@@ -227,10 +237,15 @@ body {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    position: sticky;
+    top: 0;
+    z-index: 10;
 }
 
 .header h1 {
-    font-size: 28px;
+    font-size: 32px;
+    font-weight: 700;
+    letter-spacing: 1px;
 }
 
 .user-info {
@@ -739,23 +754,25 @@ body {
 /* 响应式设计 */
 @media (max-width: 768px) {
     .auth-container {
-        padding: 20px;
+        width: 92%;
+        margin: 6vh auto;
+        padding: 24px 20px;
     }
-    
+
     .main-content {
         padding: 20px;
     }
-    
+
     .header {
         flex-direction: column;
         gap: 15px;
         text-align: center;
     }
-    
+
     .ranking-filters {
         flex-direction: column;
     }
-    
+
     .filter-btn {
         width: 100%;
     }

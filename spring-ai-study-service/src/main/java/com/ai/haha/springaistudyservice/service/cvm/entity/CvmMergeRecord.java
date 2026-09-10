@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.annotation.FieldStrategy;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.TableLogic;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import lombok.Data;
@@ -116,4 +117,10 @@ public class CvmMergeRecord {
      * 更新时间
      */
     private LocalDateTime updateTime;
+
+    /**
+     * 逻辑删除标记（0正常/1已删除）
+     */
+    @TableLogic
+    private Integer deleted;
 }

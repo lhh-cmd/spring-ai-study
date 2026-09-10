@@ -8,8 +8,7 @@ public enum RequirementStatus {
     DEVELOPING("DEVELOPING", "开发中/待合并"),
     CONFLICT("CONFLICT", "冲突待解决"),
     MERGED("MERGED", "已合并"),
-    PUBLISHED("PUBLISHED", "已发布"),
-    MERGED_MASTER("MERGED_MASTER", "已合并master");
+    RELEASED("RELEASED", "已上线（正式环境）");
 
     private final String code;
     private final String description;

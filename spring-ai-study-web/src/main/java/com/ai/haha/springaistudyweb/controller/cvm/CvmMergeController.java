@@ -79,15 +79,15 @@ public class CvmMergeController {
     }
 
     /**
-     * 当前环境验证完成，进入下一环境
+     * 进入正式环境：预发环境已集成的全部分支（通过CR）合入 release
      */
-    @PostMapping("/next-env")
-    public ResponseEntity<Map<String, Object>> nextEnv(@RequestParam Long requirementId, @RequestParam Long operatorUserId) {
+    @PostMapping("/enter-release")
+    public ResponseEntity<Map<String, Object>> enterRelease(@RequestParam Long projectId, @RequestParam Long operatorUserId) {
         Map<String, Object> response = new HashMap<>();
         try {
-            cvmMergeService.nextEnv(requirementId, operatorUserId);
+            int entered = cvmMergeService.enterRelease(projectId, operatorUserId);
             response.put("success", true);
-            response.put("message", "已进入下一环境待合并列表");
+            response.put("message", entered + " 个分支已进入正式环境，合并到 release 分支");
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             response.put("success", false);
@@ -97,33 +97,15 @@ public class CvmMergeController {
     }
 
     /**
-     * 发布到线上（正式环境）
-     */
-    @PostMapping("/publish")
-    public ResponseEntity<Map<String, Object>> publish(@RequestParam Long requirementId, @RequestParam Long operatorUserId) {
-        Map<String, Object> response = new HashMap<>();
-        try {
-            cvmMergeService.publish(requirementId, operatorUserId);
-            response.put("success", true);
-            response.put("message", "发布成功");
-            return ResponseEntity.ok(response);
-        } catch (Exception e) {
-            response.put("success", false);
-            response.put("message", e.getMessage());
-            return ResponseEntity.badRequest().body(response);
-        }
-    }
-
-    /**
-     * 合并master（其他环境退出已合并分支，基于master更新dev）
+     * 合并master：正式环境上线分支合入master，逻辑删除上线分支与需求并重建环境分支
      */
     @PostMapping("/merge-master")
-    public ResponseEntity<Map<String, Object>> mergeMaster(@RequestParam Long requirementId, @RequestParam Long operatorUserId) {
+    public ResponseEntity<Map<String, Object>> mergeMaster(@RequestParam Long projectId, @RequestParam Long operatorUserId) {
         Map<String, Object> response = new HashMap<>();
         try {
-            cvmMergeService.mergeToMaster(requirementId, operatorUserId);
+            int released = cvmMergeService.mergeMaster(projectId, operatorUserId);
             response.put("success", true);
-            response.put("message", "已合并到 master，其他环境分支已基于 master 更新");
+            response.put("message", released + " 个上线分支已合并到 master，相关需求已归档，各环境分支已重建");
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             response.put("success", false);

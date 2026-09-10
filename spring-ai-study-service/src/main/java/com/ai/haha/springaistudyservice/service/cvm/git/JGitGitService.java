@@ -47,10 +47,7 @@ public class JGitGitService implements GitOperationService {
     @Override
     public boolean checkBranchExists(CvmProject project, String branch) {
         try {
-            Map<String, Ref> refs = Git.lsRemoteRepository()
-                    .setRemote(project.getGitUrl())
-                    .setCredentialsProvider(credentials(project))
-                    .callAsMap();
+            Map<String, Ref> refs = lsRemoteWithRetry(project);
             return refs.containsKey("refs/heads/" + branch);
         } catch (Exception e) {
             log.warn("查询远程分支失败, url={}, branch={}, error={}", project.getGitUrl(), branch, e.getMessage());
@@ -62,7 +59,7 @@ public class JGitGitService implements GitOperationService {
     public void createBranch(CvmProject project, String branch, String baseBranch) {
         synchronized (repoManager.getLock(project.getProjectId())) {
             try (Git git = repoManager.openOrClone(project)) {
-                git.fetch().setRemote("origin").setCredentialsProvider(credentials(project)).call();
+                fetchWithRetry(git, project);
                 Ref baseRef = git.getRepository().findRef("refs/remotes/origin/" + baseBranch);
                 if (baseRef == null) {
                     baseRef = git.getRepository().findRef("refs/heads/" + baseBranch);
@@ -71,10 +68,7 @@ public class JGitGitService implements GitOperationService {
                     throw new IllegalStateException("找不到基础分支：" + baseBranch);
                 }
                 git.branchCreate().setName(branch).setStartPoint(baseRef.getName()).call();
-                git.push().setRemote("origin")
-                        .setRefSpecs(new RefSpec("refs/heads/" + branch))
-                        .setCredentialsProvider(credentials(project))
-                        .call();
+                pushWithRetry(git, project, branch, false);
                 log.info("创建并推送分支成功：{} -> {}", branch, project.getGitUrl());
             } catch (Exception e) {
                 throw new RuntimeException("创建分支失败：" + branch + "，" + e.getMessage(), e);
@@ -86,7 +80,7 @@ public class JGitGitService implements GitOperationService {
     public void pullBranch(CvmProject project, String branch) {
         synchronized (repoManager.getLock(project.getProjectId())) {
             try (Git git = repoManager.openOrClone(project)) {
-                git.fetch().setRemote("origin").setCredentialsProvider(credentials(project)).call();
+                fetchWithRetry(git, project);
                 checkoutTracking(git, branch);
                 log.info("拉取分支成功：{}", branch);
             } catch (Exception e) {
@@ -99,7 +93,7 @@ public class JGitGitService implements GitOperationService {
     public GitMergeResult mergeBranch(CvmProject project, String sourceBranch, String targetBranch) {
         synchronized (repoManager.getLock(project.getProjectId())) {
             try (Git git = repoManager.openOrClone(project)) {
-                git.fetch().setRemote("origin").setCredentialsProvider(credentials(project)).call();
+                fetchWithRetry(git, project);
                 checkoutTracking(git, targetBranch);
                 // 本地目标分支对齐远程最新，避免合并到过期分支
                 git.reset().setRef("refs/remotes/origin/" + targetBranch)
@@ -123,10 +117,7 @@ public class JGitGitService implements GitOperationService {
                 if (status.isSuccessful()) {
                     ObjectId head = result.getNewHead();
                     String commitId = head != null ? head.getName() : "unknown";
-                    git.push().setRemote("origin")
-                            .setRefSpecs(new RefSpec("refs/heads/" + targetBranch))
-                            .setCredentialsProvider(credentials(project))
-                            .call();
+                    pushWithRetry(git, project, targetBranch, false);
                     return GitMergeResult.ok(commitId, "合并成功，已推送到远程");
                 }
                 if (status == MergeResult.MergeStatus.CONFLICTING) {
@@ -156,15 +147,11 @@ public class JGitGitService implements GitOperationService {
     public void updateBranchFrom(CvmProject project, String targetBranch, String sourceBranch) {
         synchronized (repoManager.getLock(project.getProjectId())) {
             try (Git git = repoManager.openOrClone(project)) {
-                git.fetch().setRemote("origin").setCredentialsProvider(credentials(project)).call();
+                fetchWithRetry(git, project);
                 checkoutTracking(git, targetBranch);
                 git.reset().setRef("refs/remotes/origin/" + sourceBranch)
                         .setMode(ResetCommand.ResetType.HARD).call();
-                git.push().setRemote("origin")
-                        .setRefSpecs(new RefSpec("refs/heads/" + targetBranch))
-                        .setForce(true)
-                        .setCredentialsProvider(credentials(project))
-                        .call();
+                pushWithRetry(git, project, targetBranch, true);
                 log.info("环境重置成功：{} 已基于 {} 强推", targetBranch, sourceBranch);
             } catch (Exception e) {
                 throw new RuntimeException("环境重置失败：" + targetBranch + " <- " + sourceBranch + "，" + e.getMessage(), e);
@@ -180,7 +167,7 @@ public class JGitGitService implements GitOperationService {
         synchronized (repoManager.getLock(project.getProjectId())) {
             try (Git git = repoManager.openOrClone(project)) {
                 Repository repo = git.getRepository();
-                git.fetch().setRemote("origin").setCredentialsProvider(credentials(project)).call();
+                fetchWithRetry(git, project);
                 checkoutTracking(git, targetBranch);
                 git.reset().setRef("refs/remotes/origin/" + targetBranch)
                         .setMode(ResetCommand.ResetType.HARD).call();
@@ -201,10 +188,7 @@ public class JGitGitService implements GitOperationService {
                         revertMergeByReverseDiff(git, mainline, merge);
                     }
                 }
-                git.push().setRemote("origin")
-                        .setRefSpecs(new RefSpec("refs/heads/" + targetBranch))
-                        .setCredentialsProvider(credentials(project))
-                        .call();
+                pushWithRetry(git, project, targetBranch, false);
                 log.info("退出集成成功：revert {}（{} -> {}）", mergeCommit, sourceBranch, targetBranch);
             } catch (Exception e) {
                 throw new RuntimeException("物理回滚失败：" + e.getMessage(), e);
@@ -273,5 +257,53 @@ public class JGitGitService implements GitOperationService {
 
     private CredentialsProvider credentials(CvmProject project) {
         return repoManager.buildCredentials(project);
+    }
+
+    /**
+     * 带重试的 fetch（部分网络下 TLS 握手会间歇性被重置）
+     */
+    private void fetchWithRetry(Git git, CvmProject project) {
+        repoManager.withGitRetry("fetch", () -> {
+            try {
+                git.fetch().setRemote("origin").setCredentialsProvider(credentials(project)).call();
+                return null;
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        });
+    }
+
+    /**
+     * 带重试的 push
+     */
+    private void pushWithRetry(Git git, CvmProject project, String branch, boolean force) {
+        repoManager.withGitRetry("push", () -> {
+            try {
+                git.push().setRemote("origin")
+                        .setRefSpecs(new RefSpec("refs/heads/" + branch))
+                        .setForce(force)
+                        .setCredentialsProvider(credentials(project))
+                        .call();
+                return null;
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        });
+    }
+
+    /**
+     * 带重试的 ls-remote（查询远程分支）
+     */
+    private Map<String, Ref> lsRemoteWithRetry(CvmProject project) {
+        return repoManager.withGitRetry("ls-remote", () -> {
+            try {
+                return Git.lsRemoteRepository()
+                        .setRemote(project.getGitUrl())
+                        .setCredentialsProvider(credentials(project))
+                        .callAsMap();
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        });
     }
 }

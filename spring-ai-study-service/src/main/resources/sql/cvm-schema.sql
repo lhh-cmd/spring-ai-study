@@ -1,5 +1,20 @@
 -- 代码版本管理系统(CVM)数据库表结构
 
+-- 全局Git服务账号表（所有项目的建分支/推送/合并统一使用该账号，账号和令牌存DB不落配置文件）
+CREATE TABLE `cvm_git_account` (
+    `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键ID（自增）',
+    `account_id` BIGINT NOT NULL COMMENT '账号ID（雪花算法生成，业务ID）',
+    `account_name` VARCHAR(100) NOT NULL COMMENT 'Git服务账号用户名（如 lhh-cmd / haixing）',
+    `git_token` VARCHAR(255) NOT NULL COMMENT 'Git访问令牌（Personal Access Token）',
+    `remark` VARCHAR(255) COMMENT '备注',
+    `active` TINYINT(1) NOT NULL DEFAULT 1 COMMENT '是否启用（1启用/0停用）',
+    `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_account_id` (`account_id`),
+    UNIQUE KEY `uk_account_name` (`account_name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='CVM全局Git服务账号表';
+
 -- 用户表
 CREATE TABLE `cvm_user` (
     `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键ID（自增）',
@@ -80,9 +95,10 @@ CREATE TABLE `cvm_requirement` (
     `branch_source` VARCHAR(20) NOT NULL COMMENT '分支来源（NEW新建/REMOTE远程拉取）',
     `creator_user_id` BIGINT NOT NULL COMMENT '创建人用户ID',
     `current_env` VARCHAR(20) NOT NULL COMMENT '当前所在环境（DEV/TEST/PREVIEW/RELEASE）',
-    `status` VARCHAR(30) NOT NULL COMMENT '需求状态（DEVELOPING/CONFLICT/MERGED/PUBLISHED/MERGED_MASTER）',
+    `status` VARCHAR(30) NOT NULL COMMENT '需求状态（DEVELOPING/CONFLICT/MERGED/RELEASED）',
     `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    `deleted` TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除（0正常/1已删除）',
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_requirement_id` (`requirement_id`),
     KEY `idx_project_id` (`project_id`),
@@ -111,6 +127,7 @@ CREATE TABLE `cvm_merge_record` (
     `merge_time` DATETIME COMMENT '合并时间',
     `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    `deleted` TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除（0正常/1已删除）',
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_merge_id` (`merge_id`),
     KEY `idx_project_id` (`project_id`),
@@ -127,12 +144,14 @@ CREATE TABLE `cvm_cr_record` (
     `project_id` BIGINT NOT NULL COMMENT '项目ID',
     `requirement_id` BIGINT NOT NULL COMMENT '需求ID',
     `merge_id` BIGINT NOT NULL COMMENT '关联合并记录ID',
-    `reviewer_user_id` BIGINT NOT NULL COMMENT '评审人用户ID',
-    `cr_status` VARCHAR(20) NOT NULL COMMENT '审核结果（PASS/REJECT）',
+    `submitter_user_id` BIGINT COMMENT 'CR发起人用户ID',
+    `reviewer_user_id` BIGINT NOT NULL COMMENT '被指定的评审人用户ID',
+    `cr_status` VARCHAR(20) NOT NULL COMMENT 'CR状态（PENDING待审核/PASS通过/REJECT驳回）',
     `cr_comment` VARCHAR(500) COMMENT '审核意见',
     `cr_time` DATETIME COMMENT '审核时间',
     `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    `deleted` TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除（0正常/1已删除）',
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_cr_id` (`cr_id`),
     KEY `idx_project_id` (`project_id`),
