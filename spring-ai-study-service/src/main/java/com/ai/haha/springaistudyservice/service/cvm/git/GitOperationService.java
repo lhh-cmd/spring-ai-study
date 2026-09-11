@@ -41,14 +41,6 @@ public interface GitOperationService {
     GitMergeResult resolveConflictAndMerge(CvmProject project, String sourceBranch, String targetBranch);
 
     /**
-     * 退出集成：将已合入 targetBranch 的 sourceBranch 回滚掉。
-     * 默认空实现（模拟模式由数据库状态回滚即可），真实 git 实现执行 revert 合并提交。
-     */
-    default void exitIntegration(CvmProject project, String sourceBranch, String targetBranch, String mergeCommit) {
-        // 默认空操作
-    }
-
-    /**
      * 将 targetBranch 重置到 sourceBranch 指向的提交（用于「基于master更新dev」）
      */
     void updateBranchFrom(CvmProject project, String targetBranch, String sourceBranch);

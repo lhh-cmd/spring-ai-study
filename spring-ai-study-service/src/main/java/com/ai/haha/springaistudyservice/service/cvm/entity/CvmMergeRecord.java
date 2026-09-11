@@ -109,6 +109,12 @@ public class CvmMergeRecord {
     private LocalDateTime mergeTime;
 
     /**
+     * 待继续合并的后续分支名（按序，JSON数组）；环境重建按序重合并遇冲突停止时写入
+     */
+    @TableField(updateStrategy = FieldStrategy.IGNORED)
+    private String rebuildPending;
+
+    /**
      * 创建时间
      */
     private LocalDateTime createTime;

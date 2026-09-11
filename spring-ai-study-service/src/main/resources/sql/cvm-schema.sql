@@ -125,6 +125,7 @@ CREATE TABLE `cvm_merge_record` (
     `merge_commit` VARCHAR(100) COMMENT '合并后的提交ID',
     `cr_required` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否需要CR审核（release环境=1）',
     `merge_time` DATETIME COMMENT '合并时间',
+    `rebuild_pending` VARCHAR(2000) COMMENT '待继续合并的后续分支名（按序,JSON数组）；重建遇冲突停止时写入',
     `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     `deleted` TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除（0正常/1已删除）',

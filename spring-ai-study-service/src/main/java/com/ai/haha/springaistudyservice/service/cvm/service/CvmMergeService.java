@@ -22,9 +22,12 @@ public interface CvmMergeService {
     CvmMergeRecordView resolveConflict(Long mergeId, Long operatorUserId);
 
     /**
-     * 退出集成：将已合入当前环境公共分支的分支退出，回到待集成列表
+     * 退出集成：将已合入当前环境公共分支的分支退出，回到待集成列表。
+     * 目标环境分支先恢复与 master 一致，再将其余仍已集成分支按原顺序重新合并，遇冲突停住待解决后继续。
+     *
+     * @return 退出结果描述（含重建重合并情况与冲突提示）
      */
-    void exitIntegration(Long mergeId, Long operatorUserId);
+    String exitIntegration(Long mergeId, Long operatorUserId);
 
     /**
      * 进入正式环境：将预发环境已集成的全部分支（均需通过CR）合入 release 分支，加入正式环境合并列表
@@ -35,11 +38,11 @@ public interface CvmMergeService {
 
     /**
      * 合并 master：将正式环境上线分支合入 master，逻辑删除上线分支与需求，
-     * 并重建 dev/test/preview/release 环境分支（对齐 master 后重新合并仍存续的已集成分支）
+     * 并重建 dev/test/preview/release 环境分支（对齐 master 后重新合并仍存续的已集成分支，遇冲突停住待解决后继续）
      *
-     * @return 本次上线分支数量
+     * @return 操作结果描述（含各环境重建冲突情况）
      */
-    int mergeMaster(Long projectId, Long operatorUserId);
+    String mergeMaster(Long projectId, Long operatorUserId);
 
     /**
      * 查询项目下某环境的所有合并记录（待合并/冲突/已合并）

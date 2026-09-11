@@ -26,6 +26,18 @@ public interface CvmMergeRecordMapper extends BaseMapper<CvmMergeRecord> {
     List<CvmMergeRecord> selectByProjectIdAndEnv(Long projectId, String targetEnv);
 
     /**
+     * 查目标环境已成功合并的记录，按合并时间升序（重建时按原集成顺序重合并）
+     */
+    @Select("SELECT * FROM cvm_merge_record WHERE project_id = #{projectId} AND target_env = #{targetEnv} AND status = 'MERGED' AND deleted = 0 ORDER BY merge_time ASC, create_time ASC")
+    List<CvmMergeRecord> selectMergedByEnvOrderByTime(Long projectId, String targetEnv);
+
+    /**
+     * 根据项目+目标环境+分支名查找合并记录
+     */
+    @Select("SELECT * FROM cvm_merge_record WHERE project_id = #{projectId} AND target_env = #{targetEnv} AND branch_name = #{branchName} AND deleted = 0")
+    CvmMergeRecord selectByProjectIdAndEnvAndBranch(Long projectId, String targetEnv, String branchName);
+
+    /**
      * 统计目标环境已成功合并的记录数（用于模拟冲突检测）
      */
     @Select("SELECT COUNT(*) FROM cvm_merge_record WHERE project_id = #{projectId} AND target_env = #{targetEnv} AND status = 'MERGED' AND deleted = 0")

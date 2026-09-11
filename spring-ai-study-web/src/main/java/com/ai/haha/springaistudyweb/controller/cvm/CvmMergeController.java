@@ -48,9 +48,9 @@ public class CvmMergeController {
     public ResponseEntity<Map<String, Object>> exitIntegration(@RequestParam Long mergeId, @RequestParam Long operatorUserId) {
         Map<String, Object> response = new HashMap<>();
         try {
-            cvmMergeService.exitIntegration(mergeId, operatorUserId);
+            String message = cvmMergeService.exitIntegration(mergeId, operatorUserId);
             response.put("success", true);
-            response.put("message", "已退出集成，分支回到待集成列表");
+            response.put("message", message);
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             response.put("success", false);
@@ -103,9 +103,9 @@ public class CvmMergeController {
     public ResponseEntity<Map<String, Object>> mergeMaster(@RequestParam Long projectId, @RequestParam Long operatorUserId) {
         Map<String, Object> response = new HashMap<>();
         try {
-            int released = cvmMergeService.mergeMaster(projectId, operatorUserId);
+            String message = cvmMergeService.mergeMaster(projectId, operatorUserId);
             response.put("success", true);
-            response.put("message", released + " 个上线分支已合并到 master，相关需求已归档，各环境分支已重建");
+            response.put("message", message);
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             response.put("success", false);

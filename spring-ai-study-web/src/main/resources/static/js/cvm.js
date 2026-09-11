@@ -441,12 +441,13 @@ function renderEnvContent(envCode, records) {
         html += '<div class="text-muted">暂无已合并的分支</div>';
     } else {
         html += '<table class="data-table"><thead><tr>' +
-            '<th>分支名称</th><th>需求名称</th><th>操作</th>' +
+            '<th>分支名称</th><th>需求名称</th><th>代码CR</th><th>操作</th>' +
             '</tr></thead><tbody>';
         merged.forEach(function (r) {
             html += '<tr>' +
                 '<td><code>' + esc(r.branchName) + '</code></td>' +
                 '<td>' + esc(r.requirementName) + '</td>' +
+                '<td>' + crColumnHtml(r) + '</td>' +
                 '<td>' + mergedActions(envCode, r) + '</td>' +
                 '</tr>';
         });
@@ -477,12 +478,13 @@ function renderEnvContent(envCode, records) {
             html += '<div class="text-muted">当前没有待集成的分支</div>';
         } else {
             html += '<table class="data-table"><thead><tr>' +
-                '<th>分支名称</th><th>需求名称</th><th>操作</th>' +
+                '<th>分支名称</th><th>需求名称</th><th>代码CR</th><th>操作</th>' +
                 '</tr></thead><tbody>';
             pending.forEach(function (r) {
                 html += '<tr>' +
                     '<td><code>' + esc(r.branchName) + '</code></td>' +
                     '<td>' + esc(r.requirementName) + '</td>' +
+                    '<td>' + crColumnHtml(r) + '</td>' +
                     '<td>' + pendingActions(envCode, r) + '</td>' +
                     '</tr>';
             });
@@ -509,16 +511,23 @@ function crActionHtml(r) {
     return '<button class="btn btn-sm" onclick="openCrModal(\'' + id + '\')">发起cr</button>';
 }
 
+// 代码CR列：已上线的需求无需评审，其余展示 CR 状态/操作
+function crColumnHtml(r) {
+    if (requirementStatus(r.requirementId) === 'RELEASED') {
+        return '<span class="text-muted">—</span>';
+    }
+    return crActionHtml(r);
+}
+
 function pendingActions(envCode, r) {
     if (requirementStatus(r.requirementId) === 'RELEASED') {
         return '<span class="badge-status st-released">已上线</span>';
     }
-    const cr = crActionHtml(r);
     if (r.status === 'REJECTED') {
-        return cr;
+        return '';
     }
     const verb = '集成到 ' + ENV_CONFIG[envCode].branch;
-    return cr + ' <button class="btn btn-primary btn-sm" onclick="doMerge(\'' + r.mergeId + '\')">' + verb + '</button>';
+    return '<button class="btn btn-primary btn-sm" onclick="doMerge(\'' + r.mergeId + '\')">' + verb + '</button>';
 }
 
 function mergedActions(envCode, r) {
@@ -532,7 +541,7 @@ function mergedActions(envCode, r) {
             '<button class="btn btn-warning btn-sm" onclick="openConflictModal(\'' + r.mergeId + '\')">解决冲突</button> ' +
             '<button class="btn btn-danger btn-sm" onclick="exitIntegration(\'' + r.mergeId + '\')">退出集成</button>';
     }
-    return crActionHtml(r) + ' <button class="btn btn-danger btn-sm" onclick="exitIntegration(\'' + r.mergeId + '\')">退出集成</button>';
+    return '<button class="btn btn-danger btn-sm" onclick="exitIntegration(\'' + r.mergeId + '\')">退出集成</button>';
 }
 
 // ============ 解决冲突弹窗 ============
@@ -590,10 +599,11 @@ async function doMerge(mergeId) {
 }
 
 async function exitIntegration(mergeId) {
-    if (!(await confirmDialog('确认将该分支从当前环境公共分支退出集成？（分支将回到待集成列表）'))) return;
+    if (!(await confirmDialog('确认将该分支退出集成？\n公共分支将恢复到与 master 一致，再按原顺序重新合并其余已集成分支；若出现冲突会标记待解决，解决后自动继续合并后续分支。'))) return;
     try {
-        await api('/merge/exit-integration?mergeId=' + mergeId + '&operatorUserId=' + currentUser.userId, { method: 'POST' });
-        showMsg('已退出集成，分支回到待集成列表', 'success');
+        const res = await fetch(API_BASE + '/merge/exit-integration?mergeId=' + mergeId + '&operatorUserId=' + currentUser.userId, { method: 'POST' });
+        const json = await res.json();
+        showMsg(json.message, json.success ? 'success' : 'error');
         await refreshProjectDetail();
         reloadEnv();
     } catch (e) {

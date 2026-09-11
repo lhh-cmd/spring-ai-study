@@ -129,31 +129,42 @@ public class CvmMergeServiceImpl implements CvmMergeService {
         if (project == null) {
             throw new RuntimeException("项目不存在");
         }
+        String pendingJson = record.getRebuildPending();
         GitOperationService git = gitServiceFactory.getService(project);
         GitMergeResult result = git.resolveConflictAndMerge(project, record.getBranchName(), record.getTargetBranch());
-        if (result.isSuccess()) {
-            record.setStatus(MergeStatus.MERGED.getCode());
-            record.setMergeCommit(result.getCommitId());
-            record.setMergeTime(LocalDateTime.now());
-            record.setConflictFiles(null);
-            record.setConflictDetail(null);
-            record.setResolveSteps(null);
-            record.setUpdateTime(LocalDateTime.now());
-            mergeRecordMapper.updateById(record);
-            updateRequirementStatus(record.getRequirementId(), RequirementStatus.MERGED);
-            operationLogService.record(project.getProjectId(), record.getRequirementId(), mergeId, operatorUserId,
-                    OperationAction.RESOLVE_CONFLICT,
-                    "冲突已解决，" + record.getBranchName() + " 已合并到 " + record.getTargetBranch()
-                            + "（commit: " + result.getCommitId() + "）");
-        } else {
+        if (!result.isSuccess()) {
             throw new RuntimeException("重新合并仍存在冲突：" + result.getMessage());
+        }
+        record.setStatus(MergeStatus.MERGED.getCode());
+        record.setMergeCommit(result.getCommitId());
+        record.setMergeTime(LocalDateTime.now());
+        record.setConflictFiles(null);
+        record.setConflictDetail(null);
+        record.setResolveSteps(null);
+        record.setRebuildPending(null);
+        record.setUpdateTime(LocalDateTime.now());
+        mergeRecordMapper.updateById(record);
+        updateRequirementStatus(record.getRequirementId(), RequirementStatus.MERGED);
+        operationLogService.record(project.getProjectId(), record.getRequirementId(), mergeId, operatorUserId,
+                OperationAction.RESOLVE_CONFLICT,
+                "冲突已解决，" + record.getBranchName() + " 已合并到 " + record.getTargetBranch()
+                        + "（commit: " + result.getCommitId() + "）");
+
+        // 该冲突若是环境重建/退出集成暂停导致的，继续按序合并其后待合并的分支
+        if (StringUtils.hasText(pendingJson)) {
+            try {
+                continueReplay(project, record.getTargetBranch(), record.getTargetEnv(), pendingJson, operatorUserId);
+            } catch (Exception e) {
+                // 续并失败不应回滚已成功解决的冲突，记录下来，待用户操作日志中排查后重试
+                log.warn("冲突解决后继续合并后续分支失败：{}", e.getMessage(), e);
+            }
         }
         return toView(record);
     }
 
     @Override
     @Transactional
-    public void exitIntegration(Long mergeId, Long operatorUserId) {
+    public String exitIntegration(Long mergeId, Long operatorUserId) {
         CvmMergeRecord record = mustGetMergeRecord(mergeId);
         if (!MergeStatus.MERGED.getCode().equals(record.getStatus())
                 && !MergeStatus.CONFLICT.getCode().equals(record.getStatus())) {
@@ -171,40 +182,46 @@ public class CvmMergeServiceImpl implements CvmMergeService {
             throw new RuntimeException("该分支已上线（正式环境），不可退出集成");
         }
 
-        // 真实 git 物理回滚（尽力而为，不影响流程状态）；冲突记录无合并提交号，跳过物理回滚
+        // 冲突待解决记录从未真正合入环境分支，无需物理重建，仅做状态回退
+        if (!MergeStatus.MERGED.getCode().equals(record.getStatus())) {
+            clearMergeFields(record);
+            record.setStatus(MergeStatus.PENDING.getCode());
+            record.setUpdateTime(LocalDateTime.now());
+            mergeRecordMapper.updateById(record);
+            recomputeRequirementAfterExit(requirement);
+            operationLogService.record(project.getProjectId(), requirement.getRequirementId(), mergeId, operatorUserId,
+                    OperationAction.EXIT_INTEGRATION,
+                    "分支 " + record.getBranchName() + " 已从 " + record.getTargetBranch() + " 退出集成（未合并状态），回到待集成列表");
+            return "已退出集成，分支回到待集成列表";
+        }
+
+        // 已合并：目标环境分支恢复与 master 一致，再按原集成顺序重新合并其余仍已集成分支（遇冲突停住待解决后继续）
+        String envBranch = record.getTargetBranch();
         GitOperationService git = gitServiceFactory.getService(project);
-        if (StringUtils.hasText(record.getMergeCommit())) {
-            try {
-                git.exitIntegration(project, record.getBranchName(), record.getTargetBranch(), record.getMergeCommit());
-            } catch (Exception e) {
-                log.warn("退出集成物理回滚失败（不影响流程状态）：{}", e.getMessage());
+        git.updateBranchFrom(project, envBranch, "master");
+        List<CvmMergeRecord> others = new ArrayList<>();
+        for (CvmMergeRecord r : mergeRecordMapper.selectMergedByEnvOrderByTime(project.getProjectId(), record.getTargetEnv())) {
+            if (!r.getMergeId().equals(record.getMergeId())) {
+                others.add(r);
             }
         }
+        RebuildReplayResult replay = replayMergedBranches(project, envBranch, others, operatorUserId);
 
+        clearMergeFields(record);
         record.setStatus(MergeStatus.PENDING.getCode());
-        record.setMergeCommit(null);
-        record.setMergeTime(null);
-        record.setConflictFiles(null);
-        record.setConflictDetail(null);
-        record.setResolveSteps(null);
         record.setUpdateTime(LocalDateTime.now());
         mergeRecordMapper.updateById(record);
+        recomputeRequirementAfterExit(requirement);
 
-        // 若该需求在其他环境仍有已合并记录，则保持「已合并」；否则回到「开发中」
-        EnvCode highest = highestMergedEnv(requirement);
-        if (highest != null) {
-            requirement.setStatus(RequirementStatus.MERGED.getCode());
-            requirement.setCurrentEnv(highest.getCode());
-        } else {
-            requirement.setStatus(RequirementStatus.DEVELOPING.getCode());
-            requirement.setCurrentEnv(EnvCode.DEV.getCode());
-        }
-        requirement.setUpdateTime(LocalDateTime.now());
-        requirementMapper.updateById(requirement);
-
+        String suffix = StringUtils.hasText(replay.getConflictBranch())
+                ? "；分支 " + replay.getConflictBranch() + " 重新合并出现冲突，请解决后点击【冲突已解决】继续合并后续分支"
+                : "";
         operationLogService.record(project.getProjectId(), requirement.getRequirementId(), mergeId, operatorUserId,
                 OperationAction.EXIT_INTEGRATION,
-                "分支 " + record.getBranchName() + " 已从 " + record.getTargetBranch() + " 退出集成，回到待集成列表");
+                "分支 " + record.getBranchName() + " 已从 " + envBranch + " 退出集成；"
+                        + envBranch + " 已基于 master 重建并重新合并 " + replay.getMerged() + " 个分支" + suffix);
+        return "已退出集成：" + envBranch + " 已基于 master 重建并重新合并 " + replay.getMerged() + " 个分支"
+                + suffix + "；" + record.getBranchName() + " 回到待集成列表";
     }
 
     @Override
@@ -293,7 +310,7 @@ public class CvmMergeServiceImpl implements CvmMergeService {
 
     @Override
     @Transactional
-    public int mergeMaster(Long projectId, Long operatorUserId) {
+    public String mergeMaster(Long projectId, Long operatorUserId) {
         CvmProject project = projectMapper.selectByProjectId(projectId);
         if (project == null) {
             throw new RuntimeException("项目不存在");
@@ -331,10 +348,14 @@ public class CvmMergeServiceImpl implements CvmMergeService {
                     "上线分支 " + record.getBranchName() + " 已合并到 master（commit: " + result.getCommitId() + "）");
         }
 
-        // 2. 重建环境分支：dev/test/preview/release 对齐 master，并将仍存续的已集成分支重新合入
+        // 2. 重建环境分支：dev/test/preview/release 对齐 master，并将仍存续的已集成分支按序重新合入（遇冲突停住待解决后继续）
+        List<String> rebuildConflicts = new ArrayList<>();
         for (EnvCode envCode : EnvCode.values()) {
             try {
-                rebuildEnvBranch(project, envCode, releasedReqIds, operatorUserId);
+                String conflictBranch = rebuildEnvBranch(project, envCode, releasedReqIds, operatorUserId);
+                if (StringUtils.hasText(conflictBranch)) {
+                    rebuildConflicts.add(envCode.getBranchName() + "/" + conflictBranch);
+                }
             } catch (Exception e) {
                 log.warn("环境重建失败：{}，原因：{}", envCode.getBranchName(), e.getMessage());
             }
@@ -344,10 +365,12 @@ public class CvmMergeServiceImpl implements CvmMergeService {
         for (CvmMergeRecord record : released) {
             logicalDeleteRequirement(record.getRequirementId());
         }
-        operationLogService.record(projectId, null, null, operatorUserId,
-                OperationAction.MERGE_MASTER,
-                "正式环境 " + released.size() + " 个上线分支已合并 master，相关需求已归档（逻辑删除），各环境分支已重建并重新合并存续分支");
-        return released.size();
+        String detail = "正式环境 " + released.size() + " 个上线分支已合并 master，相关需求已归档（逻辑删除），各环境分支已重建并重新合并存续分支";
+        if (!rebuildConflicts.isEmpty()) {
+            detail += "；重建冲突分支：" + String.join("、", rebuildConflicts) + "（请在环境列表解决后继续合并后续分支）";
+        }
+        operationLogService.record(projectId, null, null, operatorUserId, OperationAction.MERGE_MASTER, detail);
+        return detail;
     }
 
     @Override
@@ -465,29 +488,202 @@ public class CvmMergeServiceImpl implements CvmMergeService {
     }
 
     /**
-     * 重建单个环境分支：对齐 master，并将该环境仍存续的已集成分支重新合并（本次已上线分支不再合并）
+     * 重建单个环境分支：对齐 master，并将该环境仍存续的已集成分支按原集成顺序重新合并（本次已上线分支不再合并）。
+     * 遇冲突停住并标记冲突待解决，由用户在环境列表内解决后继续合并后续分支。
+     *
+     * @return 重建过程中发生冲突的分支名（无冲突返回 null）
      */
-    private void rebuildEnvBranch(CvmProject project, EnvCode envCode, Set<Long> releasedReqIds, Long operatorUserId) {
+    private String rebuildEnvBranch(CvmProject project, EnvCode envCode, Set<Long> releasedReqIds, Long operatorUserId) {
         GitOperationService git = gitServiceFactory.getService(project);
         git.updateBranchFrom(project, envCode.getBranchName(), "master");
-        int remerged = 0;
-        for (CvmMergeRecord record : mergeRecordMapper.selectByProjectIdAndEnv(project.getProjectId(), envCode.getCode())) {
-            if (!MergeStatus.MERGED.getCode().equals(record.getStatus())) {
-                continue;
-            }
+        List<CvmMergeRecord> toReplay = new ArrayList<>();
+        for (CvmMergeRecord record : mergeRecordMapper.selectMergedByEnvOrderByTime(project.getProjectId(), envCode.getCode())) {
             if (releasedReqIds.contains(record.getRequirementId())) {
                 continue; // 本次已上线的分支不再重新合并
             }
-            GitMergeResult result = git.mergeNoConflict(project, record.getBranchName(), envCode.getBranchName());
+            toReplay.add(record);
+        }
+        RebuildReplayResult replay = replayMergedBranches(project, envCode.getBranchName(), toReplay, operatorUserId);
+        String detail = envCode.getDescription() + "分支（" + envCode.getBranchName() + "）已基于 master 重建，重新合并 "
+                + replay.getMerged() + " 个存续分支";
+        if (StringUtils.hasText(replay.getConflictBranch())) {
+            detail += "；分支 " + replay.getConflictBranch() + " 重新合并出现冲突，需在环境列表解决后继续";
+        }
+        operationLogService.record(project.getProjectId(), null, null, operatorUserId, OperationAction.REBUILD_ENV, detail);
+        return replay.getConflictBranch();
+    }
+
+    /**
+     * 将已集成分支按集成顺序逐一重新合并到已基于 master 重建的 envBranch：
+     * 成功则合并并推送（记录保持 MERGED 并更新提交信息）；遇第一个冲突则将该记录标记为冲突待解决、
+     * 并把其后仍待合并的分支名（按序）写入 rebuildPending，随后停止后续合并。
+     */
+    private RebuildReplayResult replayMergedBranches(CvmProject project, String envBranch,
+                                                     List<CvmMergeRecord> orderedMerged, Long operatorUserId) {
+        GitOperationService git = gitServiceFactory.getService(project);
+        int merged = 0;
+        for (int i = 0; i < orderedMerged.size(); i++) {
+            CvmMergeRecord record = orderedMerged.get(i);
+            GitMergeResult result = git.mergeBranch(project, record.getBranchName(), envBranch);
             if (result.isSuccess()) {
-                remerged++;
+                record.setStatus(MergeStatus.MERGED.getCode());
+                record.setMergeCommit(result.getCommitId());
+                record.setMergeTime(LocalDateTime.now());
+                record.setConflictFiles(null);
+                record.setConflictDetail(null);
+                record.setResolveSteps(null);
+                record.setRebuildPending(null);
+                record.setUpdateTime(LocalDateTime.now());
+                mergeRecordMapper.updateById(record);
+                merged++;
+                operationLogService.record(project.getProjectId(), record.getRequirementId(), record.getMergeId(), operatorUserId,
+                        OperationAction.MERGE,
+                        "环境重建：分支 " + record.getBranchName() + " 已重新合并到 " + envBranch
+                                + "（commit: " + result.getCommitId() + "）");
+            } else if (isConflictResult(result)) {
+                record.setStatus(MergeStatus.CONFLICT.getCode());
+                record.setConflictFiles(result.getConflictFiles() != null ? JSONUtil.toJsonStr(result.getConflictFiles()) : null);
+                record.setConflictDetail(result.getMessage());
+                record.setResolveSteps(GitConflictGuide.buildResolveSteps(record.getBranchName(), envBranch));
+                List<String> pending = new ArrayList<>();
+                for (int j = i + 1; j < orderedMerged.size(); j++) {
+                    pending.add(orderedMerged.get(j).getBranchName());
+                }
+                record.setRebuildPending(pending.isEmpty() ? null : JSONUtil.toJsonStr(pending));
+                record.setUpdateTime(LocalDateTime.now());
+                mergeRecordMapper.updateById(record);
+                updateRequirementStatus(record.getRequirementId(), RequirementStatus.CONFLICT);
+                operationLogService.record(project.getProjectId(), record.getRequirementId(), record.getMergeId(), operatorUserId,
+                        OperationAction.MERGE_CONFLICT,
+                        "环境重建：分支 " + record.getBranchName() + " 重新合并到 " + envBranch + " 出现冲突，需解决后继续");
+                return new RebuildReplayResult(merged, record.getBranchName());
             } else {
-                log.warn("环境 {} 重建后重新合并 {} 失败：{}", envCode.getBranchName(), record.getBranchName(), result.getMessage());
+                log.warn("环境重建：分支 {} 合并到 {} 失败（非冲突）：{}", record.getBranchName(), envBranch, result.getMessage());
             }
         }
-        operationLogService.record(project.getProjectId(), null, null, operatorUserId,
-                OperationAction.REBUILD_ENV,
-                envCode.getDescription() + "分支（" + envCode.getBranchName() + "）已基于 master 重建，重新合并 " + remerged + " 个存续分支");
+        return new RebuildReplayResult(merged, null);
+    }
+
+    /**
+     * 冲突解决成功后，继续按序合并重建流程遗留的「待继续合并」分支：
+     * 成功则更新为 MERGED 并继续下一个；又遇冲突则把剩余列表移交到新冲突记录并停住。
+     */
+    private void continueReplay(CvmProject project, String envBranch, String targetEnv, String pendingJson, Long operatorUserId) {
+        List<String> pending = JSONUtil.toList(pendingJson, String.class);
+        GitOperationService git = gitServiceFactory.getService(project);
+        for (int i = 0; i < pending.size(); i++) {
+            String branch = pending.get(i);
+            CvmMergeRecord record = mergeRecordMapper.selectByProjectIdAndEnvAndBranch(project.getProjectId(), targetEnv, branch);
+            if (record == null) {
+                log.warn("继续重建合并：找不到 {} 在环境 {} 的合并记录，跳过", branch, envBranch);
+                continue;
+            }
+            GitMergeResult result = git.mergeBranch(project, branch, envBranch);
+            if (result.isSuccess()) {
+                record.setStatus(MergeStatus.MERGED.getCode());
+                record.setMergeCommit(result.getCommitId());
+                record.setMergeTime(LocalDateTime.now());
+                record.setConflictFiles(null);
+                record.setConflictDetail(null);
+                record.setResolveSteps(null);
+                record.setRebuildPending(null);
+                record.setUpdateTime(LocalDateTime.now());
+                mergeRecordMapper.updateById(record);
+                updateRequirementStatus(record.getRequirementId(), RequirementStatus.MERGED);
+                operationLogService.record(project.getProjectId(), record.getRequirementId(), record.getMergeId(), operatorUserId,
+                        OperationAction.MERGE,
+                        "冲突解决后继续合并：分支 " + branch + " 已合并到 " + envBranch + "（commit: " + result.getCommitId() + "）");
+            } else if (isConflictResult(result)) {
+                record.setStatus(MergeStatus.CONFLICT.getCode());
+                record.setConflictFiles(result.getConflictFiles() != null ? JSONUtil.toJsonStr(result.getConflictFiles()) : null);
+                record.setConflictDetail(result.getMessage());
+                record.setResolveSteps(GitConflictGuide.buildResolveSteps(branch, envBranch));
+                List<String> remaining = new ArrayList<>(pending.subList(i + 1, pending.size()));
+                record.setRebuildPending(remaining.isEmpty() ? null : JSONUtil.toJsonStr(remaining));
+                record.setUpdateTime(LocalDateTime.now());
+                mergeRecordMapper.updateById(record);
+                updateRequirementStatus(record.getRequirementId(), RequirementStatus.CONFLICT);
+                operationLogService.record(project.getProjectId(), record.getRequirementId(), record.getMergeId(), operatorUserId,
+                        OperationAction.MERGE_CONFLICT,
+                        "继续合并 " + branch + " 到 " + envBranch + " 出现冲突，需解决后继续");
+                break;
+            } else {
+                log.warn("继续重建合并：{} 合并到 {} 失败（非冲突）：{}", branch, envBranch, result.getMessage());
+            }
+        }
+    }
+
+    /**
+     * 判断合并结果是否为「冲突」（而非分支不存在/网络等其它失败）
+     */
+    private boolean isConflictResult(GitMergeResult result) {
+        if (result.isSuccess()) {
+            return false;
+        }
+        if (result.getConflictFiles() != null && !result.getConflictFiles().isEmpty()) {
+            return true;
+        }
+        return result.getMessage() != null && result.getMessage().contains("冲突");
+    }
+
+    /**
+     * 退出集成后重算需求状态：任一环境存在冲突待解决则 CONFLICT；否则取排序最高的已合并环境为 MERGED；否则回到开发中
+     */
+    private void recomputeRequirementAfterExit(CvmRequirement requirement) {
+        for (EnvCode envCode : EnvCode.values()) {
+            for (CvmMergeRecord r : mergeRecordMapper.selectByProjectIdAndEnv(requirement.getProjectId(), envCode.getCode())) {
+                if (requirement.getRequirementId().equals(r.getRequirementId())
+                        && MergeStatus.CONFLICT.getCode().equals(r.getStatus())) {
+                    requirement.setStatus(RequirementStatus.CONFLICT.getCode());
+                    requirement.setUpdateTime(LocalDateTime.now());
+                    requirementMapper.updateById(requirement);
+                    return;
+                }
+            }
+        }
+        EnvCode highest = highestMergedEnv(requirement);
+        if (highest != null) {
+            requirement.setStatus(RequirementStatus.MERGED.getCode());
+            requirement.setCurrentEnv(highest.getCode());
+        } else {
+            requirement.setStatus(RequirementStatus.DEVELOPING.getCode());
+            requirement.setCurrentEnv(EnvCode.DEV.getCode());
+        }
+        requirement.setUpdateTime(LocalDateTime.now());
+        requirementMapper.updateById(requirement);
+    }
+
+    /**
+     * 清空合并相关的纠葛状态字段（合并提交/时间/冲突信息/待续并列表），用于退出集成或重新合并时重置
+     */
+    private void clearMergeFields(CvmMergeRecord record) {
+        record.setMergeCommit(null);
+        record.setMergeTime(null);
+        record.setConflictFiles(null);
+        record.setConflictDetail(null);
+        record.setResolveSteps(null);
+        record.setRebuildPending(null);
+    }
+
+    /**
+     * 环境重建重合并结果：成功重合并数量 + 首个冲突分支名（无冲突为 null）
+     */
+    private static class RebuildReplayResult {
+        private final int merged;
+        private final String conflictBranch;
+
+        RebuildReplayResult(int merged, String conflictBranch) {
+            this.merged = merged;
+            this.conflictBranch = conflictBranch;
+        }
+
+        int getMerged() {
+            return merged;
+        }
+
+        String getConflictBranch() {
+            return conflictBranch;
+        }
     }
 
     /**

@@ -8,23 +8,16 @@ import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.api.MergeCommand;
 import org.eclipse.jgit.api.MergeResult;
 import org.eclipse.jgit.api.ResetCommand;
-import org.eclipse.jgit.diff.DiffEntry;
-import org.eclipse.jgit.diff.DiffFormatter;
 import org.eclipse.jgit.merge.MergeStrategy;
 import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.lib.Ref;
 import org.eclipse.jgit.lib.Repository;
-import org.eclipse.jgit.revwalk.RevCommit;
-import org.eclipse.jgit.revwalk.RevWalk;
 import org.eclipse.jgit.transport.CredentialsProvider;
 import org.eclipse.jgit.transport.RefSpec;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -157,85 +150,6 @@ public class JGitGitService implements GitOperationService {
                 throw new RuntimeException("环境重置失败：" + targetBranch + " <- " + sourceBranch + "，" + e.getMessage(), e);
             }
         }
-    }
-
-    @Override
-    public void exitIntegration(CvmProject project, String sourceBranch, String targetBranch, String mergeCommit) {
-        if (mergeCommit == null || mergeCommit.isBlank()) {
-            throw new RuntimeException("缺少合并提交号，无法执行物理回滚");
-        }
-        synchronized (repoManager.getLock(project.getProjectId())) {
-            try (Git git = repoManager.openOrClone(project)) {
-                Repository repo = git.getRepository();
-                fetchWithRetry(git, project);
-                checkoutTracking(git, targetBranch);
-                git.reset().setRef("refs/remotes/origin/" + targetBranch)
-                        .setMode(ResetCommand.ResetType.HARD).call();
-
-                ObjectId id = repo.resolve(mergeCommit);
-                if (id == null) {
-                    throw new RuntimeException("找不到合并提交：" + mergeCommit);
-                }
-                try (RevWalk walk = new RevWalk(repo)) {
-                    RevCommit merge = walk.parseCommit(id);
-                    RevCommit[] parents = merge.getParents();
-                    if (parents.length < 2) {
-                        // 非 merge 提交，直接 revert
-                        git.revert().include(merge).call();
-                    } else {
-                        // merge 提交：以第一个父提交为主分支，生成反向补丁并应用（等价于 git revert -m 1）
-                        RevCommit mainline = walk.parseCommit(parents[0]);
-                        revertMergeByReverseDiff(git, mainline, merge);
-                    }
-                }
-                pushWithRetry(git, project, targetBranch, false);
-                log.info("退出集成成功：revert {}（{} -> {}）", mergeCommit, sourceBranch, targetBranch);
-            } catch (Exception e) {
-                throw new RuntimeException("物理回滚失败：" + e.getMessage(), e);
-            }
-        }
-    }
-
-    /**
-     * 反向应用 merge 提交相对主分支引入的差异，生成一个回滚提交（JGit RevertCommand 不支持 -m 主分支，故手动实现）
-     */
-    private void revertMergeByReverseDiff(Git git, RevCommit mainline, RevCommit merge) throws Exception {
-        Repository repo = git.getRepository();
-        ByteArrayOutputStream patch = new ByteArrayOutputStream();
-        try (DiffFormatter df = new DiffFormatter(patch)) {
-            df.setRepository(repo);
-            List<DiffEntry> entries = df.scan(mainline.getTree(), merge.getTree());
-            df.format(entries);
-        }
-        // 反向补丁（反转每条 diff 的 + / -，以及新增/删除文件头）
-        String reversed = reversePatch(new String(patch.toByteArray(), StandardCharsets.UTF_8));
-        try {
-            git.apply().setPatch(new ByteArrayInputStream(reversed.getBytes(StandardCharsets.UTF_8))).call();
-        } catch (org.eclipse.jgit.api.errors.PatchApplyException e) {
-            log.warn("反向补丁未能干净应用（可能存在后续其他合并，跳过冲突部分）：{}", e.getMessage());
-        }
-        git.commit().setMessage("revert: 退出集成 " + merge.name()).call();
-    }
-
-    /**
-     * 将 git diff 输出中的新增行/删除行互换，得到反向补丁
-     */
-    private String reversePatch(String diff) {
-        StringBuilder sb = new StringBuilder();
-        for (String line : diff.split("\n", -1)) {
-            if (line.startsWith("new file mode")) {
-                sb.append(line.replaceFirst("^new file mode", "deleted file mode")).append("\n");
-            } else if (line.startsWith("deleted file mode")) {
-                sb.append(line.replaceFirst("^deleted file mode", "new file mode")).append("\n");
-            } else if (line.startsWith("+") && !line.startsWith("+++")) {
-                sb.append("-").append(line.substring(1)).append("\n");
-            } else if (line.startsWith("-") && !line.startsWith("---")) {
-                sb.append("+").append(line.substring(1)).append("\n");
-            } else {
-                sb.append(line).append("\n");
-            }
-        }
-        return sb.toString();
     }
 
     /**
