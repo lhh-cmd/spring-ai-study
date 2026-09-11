@@ -1,0 +1,154 @@
+#!/bin/bash
+# gitflow —— 一键启动/关闭 海兴GitFlow 服务
+# 用法：
+#   ./gitflow           启动服务（启动后输入 quit 关闭服务并退出）
+#   ./gitflow rebuild   重新打包后再启动
+#   ./gitflow stop      直接关闭正在运行的服务
+
+PORT="${GITFLOW_PORT:-8080}"
+LOG_FILE="/tmp/gitflow-app.log"
+PID_FILE="/tmp/gitflow-app.pid"
+JAVA_17="/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home"
+DEFAULT_ROOT="/Users/lihaha/Documents/海星/spring-ai-study"
+
+# ---------- 定位项目根目录 ----------
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)"
+if [ -n "$GITFLOW_ROOT" ]; then
+    APP_ROOT="$GITFLOW_ROOT"
+elif [ -d "$SCRIPT_DIR/spring-ai-study-web" ]; then
+    APP_ROOT="$SCRIPT_DIR"
+else
+    APP_ROOT="$DEFAULT_ROOT"
+fi
+
+JAR="$APP_ROOT/spring-ai-study-web/target/spring-ai-study-web-0.0.1-SNAPSHOT.jar"
+
+# macOS 自带 bash 3.2 在 zh_CN.UTF-8 locale 下，变量展开紧邻中文字符会损坏字节
+# （现象：$VAR 被清空、相邻 CJK 丢一个字节）。用 C locale 跑脚本自身规避，
+# 子进程（java/mvn）再单独恢复 UTF-8 locale。
+export LC_ALL=C
+
+# ---------- 定位 Java 17 ----------
+if [ -x "$JAVA_17/bin/java" ]; then
+    JAVA_BIN="$JAVA_17/bin/java"
+else
+    JAVA_BIN="$(command -v java)"
+fi
+if [ -z "$JAVA_BIN" ]; then
+    echo "错误：未找到 Java（需要 Java 17）" >&2
+    exit 1
+fi
+
+usage() {
+    sed -n '2,5p' "$0"
+}
+
+build() {
+    echo ">>> 重新打包中（Java 17 + Maven，可能需要 1-2 分钟）..."
+    if ! ( cd "$APP_ROOT" && env LANG=zh_CN.UTF-8 LC_ALL=zh_CN.UTF-8 JAVA_HOME="$JAVA_17" PATH="$JAVA_17/bin:$PATH" mvn -q -pl spring-ai-study-web -am package -DskipTests ); then
+        echo ">>> 打包失败，退出" >&2
+        exit 1
+    fi
+    echo ">>> 打包完成"
+}
+
+wait_ready() {
+    for n in $(seq 1 120); do
+        if curl -s -o /dev/null --max-time 2 "http://localhost:$PORT/cvm.html"; then
+            return 0
+        fi
+        sleep 1
+    done
+    return 1
+}
+
+shutdown() {
+    local pid=""
+    if [ -f "$PID_FILE" ]; then
+        pid="$(cat "$PID_FILE")"
+    fi
+    if [ -z "$pid" ] || ! kill -0 "$pid" 2>/dev/null; then
+        pid="$(lsof -ti :$PORT -sTCP:LISTEN 2>/dev/null | head -1)"
+    fi
+    if [ -n "$pid" ]; then
+        echo ">>> 正在关闭服务 (PID $pid)..."
+        kill "$pid" 2>/dev/null
+        for i in $(seq 1 20); do
+            kill -0 "$pid" 2>/dev/null || break
+            sleep 0.5
+        done
+        if kill -0 "$pid" 2>/dev/null; then
+            kill -9 "$pid" 2>/dev/null
+        fi
+        rm -f "$PID_FILE"
+        echo ">>> 服务已关闭"
+    else
+        echo ">>> 没有检测到运行中的服务"
+    fi
+}
+
+start() {
+    cd "$APP_ROOT" || { echo "无法进入项目目录 $APP_ROOT" >&2; exit 1; }
+    [ -f "$JAR" ] || build
+    echo ">>> 启动中（日志 $LOG_FILE）..."
+    env LANG=zh_CN.UTF-8 LC_ALL=zh_CN.UTF-8 "$JAVA_BIN" \
+        -Dfile.encoding=UTF-8 \
+        -Dhttp.proxyHost=127.0.0.1 -Dhttp.proxyPort=7897 \
+        -Dhttps.proxyHost=127.0.0.1 -Dhttps.proxyPort=7897 \
+        -jar "$JAR" > "$LOG_FILE" 2>&1 &
+    echo $! > "$PID_FILE"
+    if wait_ready; then
+        echo ">>> 启动成功：http://localhost:$PORT"
+    else
+        echo ">>> 等待超时，请查看日志：$LOG_FILE" >&2
+        shutdown
+        exit 1
+    fi
+}
+
+trap 'shutdown; exit 0' INT TERM
+
+case "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" in
+    build|rebuild|-b)
+        build
+        ;;
+    stop|quit|-s)
+        shutdown
+        exit 0
+        ;;
+    help|-h|--help)
+        usage
+        exit 0
+        ;;
+esac
+
+# 端口已被占用：若为本脚本启动的实例（pidfile 存活）则进入交互模式，否则报错
+if lsof -i :$PORT -sTCP:LISTEN >/dev/null 2>&1; then
+    if [ -f "$PID_FILE" ] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
+        echo ">>> 服务已在运行（PID $(cat "$PID_FILE")），进入交互模式"
+    else
+        echo ">>> 端口 $PORT 已被非本脚本启动的进程占用（PID $(lsof -ti :$PORT -sTCP:LISTEN | head -1)），请先手动关闭" >&2
+        exit 1
+    fi
+else
+    start
+fi
+
+echo "提示：输入 quit 关闭服务并退出（Ctrl+C 同样会安全关闭）"
+while true; do
+    if ! read -r -p "> " line; then
+        echo
+        break
+    fi
+    case "$(printf '%s' "$line" | tr '[:upper:]' '[:lower:]')" in
+        quit|exit|q)
+            break
+            ;;
+        "")
+            ;;
+        *)
+            echo "未知命令：$line（输入 quit 关闭服务并退出）"
+            ;;
+    esac
+done
+shutdown
